@@ -32,7 +32,13 @@
     qsAnswered:   document.getElementById('qs-answered'),
     leaveBtn:     document.getElementById('leave-btn'),
     closedBanner: document.getElementById('closed-banner'),
+    waiting:      document.getElementById('waiting'),
+    waitingTitle: document.getElementById('waiting-title'),
+    waitingNote:  document.getElementById('waiting-note'),
     questions:    document.getElementById('questions'),
+    past:         document.getElementById('past'),
+    pastCount:    document.getElementById('past-count'),
+    pastBody:     document.getElementById('past-body'),
     board:        document.getElementById('team-leaderboard'),
     boardBody:    document.getElementById('team-leaderboard-body')
   };
@@ -87,6 +93,10 @@
 
     if (!state.config.contestOpen) {
       notes[question.id] = { type: 'err', text: 'Submissions are closed.' };
+      return render(Store.state());
+    }
+    if (Estimathon.questionStatus(question) !== 'open') {
+      notes[question.id] = { type: 'err', text: 'This question just closed.' };
       return render(Store.state());
     }
     if (Scoring.submissionsLeft(state, team.id) <= 0) {
@@ -154,7 +164,6 @@
     el.currentTeam.textContent = team.name;
     el.currentMem.textContent = team.members || '';
     el.subsLeft.textContent = Scoring.submissionsLeft(state, team.id);
-    el.closedBanner.hidden = !!cfg.contestOpen;
 
     var answered = 0;
     cfg.questions.forEach(function (q) {
@@ -168,8 +177,16 @@
 
   function renderQuestions(state, team) {
     var cfg = state.config;
-    var locked = !cfg.contestOpen;
     var outOfSubs = Scoring.submissionsLeft(state, team.id) <= 0;
+
+    /* A pending question is one the organizers have not asked yet — it is not
+       rendered at all, and in server mode its text never even reaches us. */
+    var open = [], closed = [];
+    cfg.questions.forEach(function (q, i) {
+      var st = Estimathon.questionStatus(q);
+      if (st === 'open') open.push({ q: q, n: i + 1 });
+      else if (st === 'closed') closed.push({ q: q, n: i + 1 });
+    });
 
     /* Keep whatever the user is mid-typing across a re-render. */
     var drafts = {};
@@ -183,8 +200,74 @@
     });
 
     el.questions.textContent = '';
+    open.forEach(function (item) {
+      el.questions.appendChild(buildCard(state, team, item.q, item.n, {
+        editable: cfg.contestOpen && !outOfSubs,
+        drafts: drafts
+      }));
+    });
 
-    cfg.questions.forEach(function (q, i) {
+    renderWaiting(state, open.length, closed.length);
+    renderPast(state, team, closed);
+
+    /* restore focus so typing across a live update is not interrupted */
+    Object.keys(drafts).forEach(function (id) {
+      var d = drafts[id];
+      if (!d.focus) return;
+      var node = el.questions.querySelector('.q[data-qid="' + id + '"]');
+      if (!node) return;
+      var target = node.querySelector('.' + d.focus.split(' ').join('.'));
+      if (target) target.focus();
+    });
+  }
+
+  /* The "nothing to do right now" panel: between questions, before the first
+     one, and after the last. */
+  function renderWaiting(state, openCount, closedCount) {
+    var cfg = state.config;
+    /* The banner is only for the odd case of a question still open while the
+       master switch is off; otherwise the waiting panel says everything. */
+    el.closedBanner.hidden = cfg.contestOpen || openCount === 0;
+
+    if (openCount > 0) {
+      el.waiting.hidden = true;
+      return;
+    }
+    el.waiting.hidden = false;
+
+    var asked = closedCount > 0;
+    if (!cfg.contestOpen && asked) {
+      el.waitingTitle.textContent = 'That is the whole contest.';
+      el.waitingNote.textContent = cfg.answersReleased
+        ? 'Your results are below.'
+        : 'Hang tight while the organizers finish scoring.';
+    } else if (asked) {
+      el.waitingTitle.textContent = 'Waiting for the next question…';
+      el.waitingNote.textContent = 'Keep this page open. The next question appears here automatically.';
+    } else {
+      el.waitingTitle.textContent = 'You are signed in. The contest has not started.';
+      el.waitingNote.textContent = 'Question 1 will appear here the moment the organizers open it.';
+    }
+  }
+
+  function renderPast(state, team, closed) {
+    if (!closed.length) {
+      el.past.hidden = true;
+      return;
+    }
+    el.past.hidden = false;
+    el.pastCount.textContent = closed.length;
+    el.pastBody.textContent = '';
+    closed.forEach(function (item) {
+      el.pastBody.appendChild(buildCard(state, team, item.q, item.n, { editable: false }));
+    });
+  }
+
+  function buildCard(state, team, q, number, opts) {
+      var cfg = state.config;
+      var i = number - 1;
+      var editable = !!opts.editable;
+      var drafts = opts.drafts || {};
       var sub = Scoring.latestSubmission(state, team.id, q.id);
       /* Teams see answers only once an admin releases them — never merely
          because submissions happen to be closed. */
@@ -192,7 +275,7 @@
       var correct = revealed && Scoring.isCorrect(sub, q.answer);
 
       var card = document.createElement('div');
-      card.className = 'q' + (sub ? ' answered' : '') +
+      card.className = 'q' + (sub ? ' answered' : '') + (editable ? ' live' : '') +
                        (revealed ? (correct ? ' correct' : ' wrong') : '');
       card.dataset.qid = q.id;
 
@@ -212,28 +295,37 @@
       }
       head.appendChild(num);
       head.appendChild(text);
+      if (!editable) {
+        var lock = document.createElement('span');
+        lock.className = 'tag tag-locked';
+        lock.textContent = 'closed';
+        head.appendChild(lock);
+      }
       card.appendChild(head);
 
-      var form = document.createElement('form');
-      form.className = 'q-form';
+      /* A closed question keeps its card but loses its form: there is nothing
+         left to change. */
+      if (editable) {
+        var form = document.createElement('form');
+        form.className = 'q-form';
 
-      var lowField = numberField('Low bound', 'js-low', drafts[q.id] ? drafts[q.id].low : '');
-      var highField = numberField('High bound', 'js-high', drafts[q.id] ? drafts[q.id].high : '');
-      var btn = document.createElement('button');
-      btn.type = 'submit';
-      btn.className = 'btn btn-primary';
-      btn.textContent = sub ? 'Replace' : 'Submit';
-      btn.disabled = locked || outOfSubs;
+        var lowField = numberField('Low bound', 'js-low', drafts[q.id] ? drafts[q.id].low : '');
+        var highField = numberField('High bound', 'js-high', drafts[q.id] ? drafts[q.id].high : '');
+        var btn = document.createElement('button');
+        btn.type = 'submit';
+        btn.className = 'btn btn-primary';
+        btn.textContent = sub ? 'Replace' : 'Submit';
 
-      form.appendChild(lowField.wrap);
-      form.appendChild(highField.wrap);
-      form.appendChild(btn);
+        form.appendChild(lowField.wrap);
+        form.appendChild(highField.wrap);
+        form.appendChild(btn);
 
-      form.addEventListener('submit', function (e) {
-        e.preventDefault();
-        handleSubmit(Store.state(), q, lowField.input, highField.input);
-      });
-      card.appendChild(form);
+        form.addEventListener('submit', function (e) {
+          e.preventDefault();
+          handleSubmit(Store.state(), q, lowField.input, highField.input);
+        });
+        card.appendChild(form);
+      }
 
       /* status line: current interval, ratio, and any inline note */
       var status = document.createElement('p');
@@ -263,30 +355,19 @@
         status.textContent = 'Not answered — ' + cfg.unansweredPenalty + ' pts. ' +
                              'The answer was ' + fmt(q.answer) + '.';
       } else {
-        status.textContent = locked ? 'No answer submitted.' : 'No answer yet.';
+        status.textContent = editable ? 'No answer yet.' : 'No answer submitted.';
       }
       card.appendChild(status);
 
       var note = notes[q.id];
-      if (note) {
+      if (note && editable) {
         var noteEl = document.createElement('p');
         noteEl.className = 'q-status' + (note.type === 'err' ? ' err' : '');
         noteEl.textContent = note.text;
         card.appendChild(noteEl);
       }
 
-      el.questions.appendChild(card);
-    });
-
-    /* restore focus so typing across a live update is not interrupted */
-    Object.keys(drafts).forEach(function (id) {
-      var d = drafts[id];
-      if (!d.focus) return;
-      var node = el.questions.querySelector('.q[data-qid="' + id + '"]');
-      if (!node) return;
-      var target = node.querySelector('.' + d.focus.split(' ').join('.'));
-      if (target) target.focus();
-    });
+      return card;
   }
 
   function numberField(label, cls, value) {

@@ -230,6 +230,73 @@ input::placeholder { color: #b9b2c4; }
 .tag-good { background: var(--good-soft); color: var(--good); }
 .tag-bad  { background: var(--bad-soft);  color: var(--bad); }
 
+/* ------------------------------------------------- waiting / past (team)  */
+
+.waiting {
+  display: flex; align-items: center; gap: 1rem;
+  border-style: dashed;
+}
+.waiting h2 { margin: 0; font-size: 1.05rem; }
+.waiting p { margin: .2rem 0 0; color: var(--ink-faint); font-size: .875rem; }
+.waiting-dot {
+  flex: none; width: 12px; height: 12px; border-radius: 50%;
+  background: var(--purple);
+  box-shadow: 0 0 0 0 rgba(69, 0, 132, .45);
+  animation: pulse 2s infinite;
+}
+@keyframes pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(69, 0, 132, .45); }
+  70%  { box-shadow: 0 0 0 12px rgba(69, 0, 132, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(69, 0, 132, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .waiting-dot { animation: none; }
+}
+
+.past summary {
+  cursor: pointer; font-weight: 600; color: var(--ink-soft);
+  font-size: .9rem; list-style: none;
+}
+.past summary::-webkit-details-marker { display: none; }
+.past summary::before { content: '▸ '; color: var(--ink-faint); }
+.past[open] summary::before { content: '▾ '; }
+.past #past-body { margin-top: 1rem; display: grid; gap: .85rem; }
+.past .q { box-shadow: none; }
+.tag-locked { background: var(--line); color: var(--ink-faint); }
+
+/* ------------------------------------------------------- run of play (admin) */
+
+.rop-main {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 1.5rem; flex-wrap: wrap; margin-bottom: 1rem;
+}
+.rop-current { flex: 1 1 22rem; min-width: 0; }
+.rop-text { margin: .25rem 0 0; font-size: 1.15rem; font-weight: 600; line-height: 1.35; }
+.rop-answer { margin: .35rem 0 0; font-family: var(--mono); font-size: .85rem; color: var(--gold); }
+.rop-actions { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
+
+.rop-strip { display: flex; flex-wrap: wrap; gap: .35rem; }
+.chip {
+  width: 2.1rem; height: 2.1rem; padding: 0;
+  display: grid; place-items: center;
+  border-radius: 8px; border: 1px solid var(--line);
+  background: #fff; color: var(--ink-faint);
+  font: inherit; font-size: .8rem; font-weight: 700;
+  cursor: pointer;
+}
+.chip:hover { border-color: var(--purple); color: var(--purple); }
+/* .chip-pending keeps the plain .chip look: not yet asked. */
+.chip-pending { border-style: dashed; }
+.chip-open {
+  background: var(--purple); border-color: var(--purple); color: #fff;
+  box-shadow: 0 0 0 3px var(--purple-soft);
+}
+.chip-open:hover { color: #fff; }
+.chip-closed { background: var(--purple-soft); border-color: var(--purple-soft); color: var(--purple); }
+.pill-open-dark { background: var(--purple); color: #fff; }
+
+.q.live { border-left-color: var(--gold); }
+
 /* ------------------------------------------------------------ admin grid  */
 
 .control-bar { display: flex; gap: 2rem; flex-wrap: wrap; align-items: center; }

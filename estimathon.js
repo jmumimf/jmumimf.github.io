@@ -133,7 +133,14 @@
   function normalize(state) {
     var s = state && typeof state === 'object' ? state : {};
     s.config = Object.assign({}, CONFIG_DEFAULTS, s.config || {});
-    s.config.questions = reconcileQuestions(s.config.questions);
+    /* With a server, the server's question list is the only one that counts:
+       it withholds the text of questions that have not been asked and the
+       answers until they are released, and it strips DEFAULT_QUESTIONS out of
+       this file on its way to the browser. Never paper over that with a local
+       copy. */
+    s.config.questions = API
+      ? (Array.isArray(s.config.questions) ? s.config.questions : [])
+      : reconcileQuestions(s.config.questions);
     s.teams = Array.isArray(s.teams) ? s.teams : [];
     s.submissions = Array.isArray(s.submissions) ? s.submissions : [];
     return s;
@@ -154,13 +161,26 @@
     var defaultIds = DEFAULT_QUESTIONS.map(function (q) { return q.id; }).join('|');
     if (savedIds !== defaultIds) return clone(DEFAULT_QUESTIONS);
 
-    var answers = {};
-    saved.forEach(function (q) { answers[q.id] = q.answer; });
+    var byId = {};
+    saved.forEach(function (q) { byId[q.id] = q; });
     return DEFAULT_QUESTIONS.map(function (q) {
       var copy = clone(q);
-      if (Object.prototype.hasOwnProperty.call(answers, q.id)) copy.answer = answers[q.id];
+      var prev = byId[q.id];
+      if (prev) {
+        if (Object.prototype.hasOwnProperty.call(prev, 'answer')) copy.answer = prev.answer;
+        copy.status = prev.status || 'pending';
+      } else {
+        copy.status = 'pending';
+      }
       return copy;
     });
+  }
+
+  /* Every question starts 'pending' — unseen by teams — and an admin moves it
+     to 'open' and then 'closed'. Running all fifteen at once is just opening
+     them all, which is one button on the dashboard. */
+  function questionStatus(q) {
+    return (q && q.status) || 'pending';
   }
 
   /* --------------------------------------------------------------------- */
@@ -331,6 +351,60 @@
       return Promise.resolve();
     },
 
+    /* ----- run of play -------------------------------------------------- */
+
+    /* Move one question. exclusive (the default) closes whatever else was
+       open, which is what "one question at a time" means. */
+    setQuestionStatus: function (questionId, status, exclusive) {
+      var only = exclusive !== false;
+      if (API) {
+        return post('/question', { questionId: questionId, status: status, exclusive: only })
+          .then(Store.refresh);
+      }
+      Store.update(function (s) {
+        s.config.questions.forEach(function (q) {
+          if (q.id === questionId) q.status = status;
+          else if (only && status === 'open' && q.status === 'open') q.status = 'closed';
+        });
+      });
+      return Promise.resolve();
+    },
+
+    /* Close whatever is open, open the next unasked question. */
+    nextQuestion: function () {
+      if (API) return post('/question', { action: 'next' }).then(Store.refresh);
+
+      var result = { finished: true, opened: null };
+      Store.update(function (s) {
+        var qs = s.config.questions;
+        var currentIndex = -1;
+        qs.forEach(function (q, i) {
+          if (questionStatus(q) === 'open') { q.status = 'closed'; currentIndex = i; }
+        });
+        for (var i = currentIndex + 1; i < qs.length; i++) {
+          if (questionStatus(qs[i]) === 'pending') {
+            qs[i].status = 'open';
+            s.config.contestOpen = true;
+            result = { finished: false, opened: qs[i].id };
+            return;
+          }
+        }
+      });
+      return Promise.resolve(result);
+    },
+
+    /* Every question at once: the classic format, or a hard stop at the end. */
+    setAllQuestions: function (status) {
+      if (API) {
+        return post('/question', { action: 'all', status: status }).then(Store.refresh);
+      }
+      Store.update(function (s) {
+        s.config.questions.forEach(function (q) { q.status = status; });
+        if (status === 'open') s.config.contestOpen = true;
+      });
+      return Promise.resolve();
+    },
+
     removeTeam: function (teamId) {
       if (API) return post('/team/delete', { teamId: teamId }).then(Store.refresh);
       Store.update(function (s) {
@@ -340,8 +414,8 @@
       return Promise.resolve();
     },
 
-    /* Clears teams and submissions. The question set and answer key come back
-       from estimathon.js / the server, not from here. */
+    /* Clears teams and submissions and rewinds the run of play. The question
+       set and answer key come back from estimathon.js / the server. */
     reset: function () {
       if (API) return post('/reset', {}).then(Store.refresh);
       commit(emptyState());
@@ -491,6 +565,7 @@
     Store: Store,
     Scoring: Scoring,
     DEFAULT_QUESTIONS: DEFAULT_QUESTIONS,
+    questionStatus: questionStatus,
     parseNumber: parseNumber,
     formatNumber: formatNumber,
     formatScore: formatScore,

@@ -6,10 +6,12 @@ parses the JS array literal (unquoted keys, single-quoted strings, trailing
 commas -- none of which json.loads accepts) into plain Python dicts.
 """
 
+import json
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 JS_FILE = HERE / "estimathon.js"
+ANSWERS_FILE = HERE / "answers.json"
 MARKER = "var DEFAULT_QUESTIONS = ["
 
 
@@ -192,10 +194,26 @@ class _Parser:
             raise self.error("bad number %r" % text)
 
 
-def load_questions(js_file=JS_FILE):
+def load_answer_key(path=ANSWERS_FILE):
+    """The answer key, if there is one on disk.
+
+    Kept out of estimathon.js on purpose: that file is served to every team's
+    browser. This one never is -- server.py refuses to serve it and .gitignore
+    keeps it off the public Pages site. Missing file is fine; the organizers
+    can type the answers into the dashboard instead.
+    """
+    if not Path(path).exists():
+        return {}
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    return {k: float(v) for k, v in data.items()
+            if not k.startswith("_") and isinstance(v, (int, float))}
+
+
+def load_questions(js_file=JS_FILE, answers=None):
     """The question set, in order, as [{'id','text','answer','unit'}, ...]."""
     js = Path(js_file).read_text(encoding="utf-8")
     questions = _Parser(_extract_array(js)).value()
+    key = load_answer_key() if answers is None else answers
 
     seen = set()
     for i, q in enumerate(questions):
@@ -206,8 +224,16 @@ def load_questions(js_file=JS_FILE):
         seen.add(q["id"])
         q.setdefault("answer", None)
         q.setdefault("unit", "")
+        # answers.json wins: estimathon.js should not carry the key at all.
+        if q["id"] in key:
+            q["answer"] = key[q["id"]]
         if q["answer"] is not None:
             q["answer"] = float(q["answer"])
+
+    unknown = set(key) - seen
+    if unknown:
+        raise QuestionParseError(
+            "answers.json has ids that are not questions: %s" % ", ".join(sorted(unknown)))
     return questions
 
 

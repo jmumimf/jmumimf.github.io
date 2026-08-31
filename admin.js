@@ -14,6 +14,12 @@
 
   var UNLOCK_KEY = 'estimathon:adminUnlocked';
 
+  /* The organizer passcode. server.py reads this line by its marker comment,
+     so the variable can be called anything, but the marker has to stay put.
+     Declared up here because the session-restore check below runs during load
+     and would otherwise read it before it was assigned. */
+  var ignore = 'loverboykeegan'; /* admin-passcode */
+
   var el = {
     gateView:    document.getElementById('gate-view'),
     gateForm:    document.getElementById('gate-form'),
@@ -31,6 +37,17 @@
     importBtn:   document.getElementById('import-btn'),
     importFile:  document.getElementById('import-file'),
     resetBtn:    document.getElementById('reset-btn'),
+
+    ropProgress: document.getElementById('rop-progress'),
+    ropLabel:    document.getElementById('rop-label'),
+    ropText:     document.getElementById('rop-text'),
+    ropAnswer:   document.getElementById('rop-answer'),
+    ropNext:     document.getElementById('rop-next'),
+    ropClose:    document.getElementById('rop-close'),
+    ropReopen:   document.getElementById('rop-reopen'),
+    ropStrip:    document.getElementById('rop-strip'),
+    ropOpenAll:  document.getElementById('rop-open-all'),
+    ropCloseAll: document.getElementById('rop-close-all'),
 
     statTeams:   document.getElementById('stat-teams'),
     statSubs:    document.getElementById('stat-subs'),
@@ -108,6 +125,114 @@
     Store.patchConfig({ answersReleased: el.toggleAnswers.checked });
   });
 
+  /* ------------------------------------------------------------ run of play */
+
+  function currentQuestion(state) {
+    var found = null;
+    state.config.questions.forEach(function (q, i) {
+      if (Estimathon.questionStatus(q) === 'open' && !found) found = { q: q, n: i + 1 };
+    });
+    return found;
+  }
+
+  function nextPending(state) {
+    var found = null;
+    state.config.questions.forEach(function (q, i) {
+      if (!found && Estimathon.questionStatus(q) === 'pending') found = { q: q, n: i + 1 };
+    });
+    return found;
+  }
+
+  el.ropNext.addEventListener('click', function () {
+    var state = Store.state();
+    var open = currentQuestion(state);
+    if (open && !confirm('Close question ' + open.n + ' and move on?\n\n' +
+                         'Teams can no longer change their interval for it.')) return;
+    Store.nextQuestion();
+  });
+
+  el.ropClose.addEventListener('click', function () {
+    var open = currentQuestion(Store.state());
+    if (!open) return;
+    Store.setQuestionStatus(open.q.id, 'closed');
+  });
+
+  /* Escape hatch: closed a question by accident, or gave a team more time. */
+  el.ropReopen.addEventListener('click', function () {
+    var state = Store.state();
+    var last = null;
+    state.config.questions.forEach(function (q, i) {
+      if (Estimathon.questionStatus(q) === 'closed') last = { q: q, n: i + 1 };
+    });
+    if (!last) return;
+    Store.setQuestionStatus(last.q.id, 'open');
+  });
+
+  el.ropOpenAll.addEventListener('click', function () {
+    if (!confirm('Show all questions at once?\n\nThis is the classic format — ' +
+                 'teams work through every question in one sitting.')) return;
+    Store.setAllQuestions('open').then(function () {
+      Store.patchConfig({ contestOpen: true });
+    });
+  });
+
+  el.ropCloseAll.addEventListener('click', function () {
+    if (!confirm('Close every question? Teams can no longer submit anything.')) return;
+    Store.setAllQuestions('closed');
+  });
+
+  function renderRunOfPlay(state) {
+    var questions = state.config.questions;
+    var open = currentQuestion(state);
+    var upNext = nextPending(state);
+    var closedCount = questions.filter(function (q) {
+      return Estimathon.questionStatus(q) === 'closed';
+    }).length;
+
+    el.ropProgress.textContent = open
+      ? 'question ' + open.n + ' of ' + questions.length + ' — open'
+      : (closedCount ? closedCount + ' of ' + questions.length + ' asked' : 'not started');
+    el.ropProgress.className = 'pill ' + (open ? 'pill-open-dark' : 'pill-muted');
+
+    if (open) {
+      el.ropLabel.textContent = 'Now asking';
+      el.ropText.textContent = open.n + '. ' + open.q.text;
+      el.ropAnswer.textContent = open.q.answer != null
+        ? 'Answer: ' + fmt(open.q.answer) + (open.q.unit ? ' ' + open.q.unit : '')
+        : '';
+    } else if (upNext) {
+      el.ropLabel.textContent = 'Up next';
+      el.ropText.textContent = upNext.n + '. ' + upNext.q.text;
+      el.ropAnswer.textContent = '';
+    } else {
+      el.ropLabel.textContent = 'Done';
+      el.ropText.textContent = 'Every question has been asked.';
+      el.ropAnswer.textContent = '';
+    }
+
+    el.ropNext.disabled = !upNext;
+    el.ropNext.textContent = open ? 'Close & next question'
+                           : (upNext ? 'Ask question ' + upNext.n : 'No questions left');
+    el.ropClose.disabled = !open;
+    el.ropReopen.disabled = !closedCount || !!open;
+
+    /* The strip: one chip per question, click to jump. */
+    el.ropStrip.textContent = '';
+    questions.forEach(function (q, i) {
+      var status = Estimathon.questionStatus(q);
+      var chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'chip chip-' + status;
+      chip.textContent = i + 1;
+      chip.title = (q.text || '(not yet shown to teams)') + ' — ' + status;
+      chip.addEventListener('click', function () {
+        if (status === 'open') return Store.setQuestionStatus(q.id, 'closed');
+        Store.setQuestionStatus(q.id, 'open');
+      });
+      el.ropStrip.appendChild(chip);
+    });
+  }
+
   el.exportBtn.addEventListener('click', function () {
     download('estimathon-' + stamp() + '.json', Store.exportJSON(), 'application/json');
   });
@@ -173,6 +298,7 @@
 
     el.boardNote.textContent = keyed === cfg.questions.length ? 'final' : 'provisional';
 
+    renderRunOfPlay(state);
     renderScoreboard(board);
     renderFeed(state);
     renderAnswerKey(state);
@@ -256,8 +382,6 @@
       el.feed.appendChild(li);
     });
   }
-
-  var ignore = 'loverboykeegan';
 
   function renderAnswerKey(state) {
     /* Don't stomp on a field the organizer is mid-edit. */

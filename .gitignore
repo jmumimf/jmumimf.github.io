@@ -1,3 +1,7 @@
+# THE ANSWER KEY. This repo publishes to jmumimf.github.io, so anything
+# committed here is public. Keep your own backup outside the repo.
+answers.json
+
 # Event databases — real submissions, not source
 *.db
 *.db-wal

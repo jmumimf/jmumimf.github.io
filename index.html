@@ -14,7 +14,6 @@
       <span class="brand-mark">∑</span>
       <span>
         <strong id="event-name">JMU MIMF Estimathon</strong>
-        <small>Estimate boldly. Bracket carefully.</small>
       </span>
     </div>
     <div class="topbar-right">
@@ -32,8 +31,7 @@
       <h1>Sign your team in</h1>
       <p class="lede">
         Pick a team name, then submit an interval (a low and a high) for each
-        question. You win by bracketing the true answer with the tightest range
-        you dare.
+        question. The wider the interval, the higher the score; the further your interval is from the true answer, the higher your score. Lowest score wins.
       </p>
 
       <form id="join-form" class="form" novalidate>
@@ -70,7 +68,7 @@
             so a narrow interval is cheap and a wide one is not.</li>
         <li>If your interval <em>misses</em> the answer, you also pay how far off you
             were, in doublings: an answer 4× outside your range adds 2, 8× adds 3.</li>
-        <li>Skipping a question costs <strong id="rule-penalty">10</strong> — almost always
+        <li>Skipping a question costs <strong id="rule-penalty">10</strong>, almost always
             worse than a guess.</li>
         <li><strong>Lowest total wins.</strong></li>
       </ol>
@@ -102,7 +100,20 @@
       Submissions are closed. Sit tight; the admins are scoring.
     </p>
 
+    <div id="waiting" class="waiting card" hidden>
+      <span class="waiting-dot"></span>
+      <div>
+        <h2 id="waiting-title">Waiting for the next question…</h2>
+        <p id="waiting-note">Keep this page open. The next question appears here automatically.</p>
+      </div>
+    </div>
+
     <div id="questions" class="questions"></div>
+
+    <details id="past" class="past card" hidden>
+      <summary><span id="past-count">0</span> closed questions</summary>
+      <div id="past-body"></div>
+    </details>
 
     <section id="team-leaderboard" class="card" hidden>
       <h2>Live standings</h2>

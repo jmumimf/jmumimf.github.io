@@ -24,7 +24,9 @@ import argparse
 import json
 import mimetypes
 import re
+import shutil
 import sqlite3
+import subprocess
 import threading
 import time
 import uuid
@@ -32,7 +34,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from questions import load_questions
+from questions import _extract_array as extract_array, load_questions
 
 HERE = Path(__file__).resolve().parent
 MAX_BODY = 64 * 1024
@@ -43,7 +45,11 @@ CREATE TABLE IF NOT EXISTS questions (
     position INTEGER NOT NULL,
     text     TEXT NOT NULL,
     unit     TEXT NOT NULL DEFAULT '',
-    answer   REAL
+    answer   REAL,
+    -- 'pending' = teams have not seen it yet, 'open' = accepting submissions,
+    -- 'closed' = shown but locked. The team page never sends a pending
+    -- question's text to anyone.
+    status   TEXT NOT NULL DEFAULT 'pending'
 );
 CREATE TABLE IF NOT EXISTS teams (
     id        TEXT PRIMARY KEY,
@@ -93,9 +99,17 @@ class Database:
         self.con.execute("PRAGMA foreign_keys = ON")
         self.con.execute("PRAGMA journal_mode = WAL")
         self.con.executescript(SCHEMA)
+        self._migrate()
         self.con.commit()
         self._seed_config()
         self.sync_questions(reseed=reseed)
+
+    def _migrate(self):
+        """Bring a database created by an older version up to date."""
+        columns = {r["name"] for r in self.con.execute("PRAGMA table_info(questions)")}
+        if "status" not in columns:
+            self.con.execute(
+                "ALTER TABLE questions ADD COLUMN status TEXT NOT NULL DEFAULT 'pending'")
 
     def _seed_config(self):
         with self.lock:
@@ -148,10 +162,16 @@ class Database:
             config = {r["key"]: json.loads(r["value"])
                       for r in self.con.execute("SELECT * FROM config")}
             reveal = include_answers or config.get("answersReleased", False)
+            rows = list(self.con.execute("SELECT * FROM questions ORDER BY position"))
             config["questions"] = [
-                {"id": r["id"], "text": r["text"], "unit": r["unit"],
-                 "answer": r["answer"] if reveal else None}
-                for r in self.con.execute("SELECT * FROM questions ORDER BY position")
+                {"id": r["id"],
+                 # A question nobody has been shown yet keeps its text to
+                 # itself, so a team cannot read ahead from the network tab.
+                 "text": r["text"] if (include_answers or r["status"] != "pending") else "",
+                 "unit": r["unit"] if (include_answers or r["status"] != "pending") else "",
+                 "answer": r["answer"] if reveal else None,
+                 "status": r["status"]}
+                for r in rows
             ]
             teams = [
                 {"id": r["id"], "name": r["name"], "members": r["members"],
@@ -211,9 +231,14 @@ class Database:
                 raise ApiError("Submissions are closed.")
             if not self.con.execute("SELECT 1 FROM teams WHERE id = ?", (team_id,)).fetchone():
                 raise ApiError("That team is no longer signed in. Rejoin to keep going.", 404)
-            if not self.con.execute("SELECT 1 FROM questions WHERE id = ?",
-                                    (question_id,)).fetchone():
+            row = self.con.execute("SELECT status FROM questions WHERE id = ?",
+                                   (question_id,)).fetchone()
+            if not row:
                 raise ApiError("Unknown question %r." % question_id)
+            if row["status"] == "pending":
+                raise ApiError("That question has not been asked yet.")
+            if row["status"] == "closed":
+                raise ApiError("That question is closed. Answers are locked in.")
 
             used = self.con.execute(
                 "SELECT COUNT(*) AS n FROM submissions WHERE team_id = ?",
@@ -249,6 +274,68 @@ class Database:
             self.con.commit()
         return {"ok": True}
 
+    # ----- run of play -----------------------------------------------------
+
+    VALID_STATUS = ("pending", "open", "closed")
+
+    def set_question_status(self, question_id, status, exclusive=True):
+        """Move one question between pending / open / closed.
+
+        exclusive=True (the default) closes whatever else was open, which is
+        what running the event one question at a time means.
+        """
+        if status not in self.VALID_STATUS:
+            raise ApiError("Unknown question status %r." % status)
+        with self.lock:
+            if not self.con.execute("SELECT 1 FROM questions WHERE id = ?",
+                                    (question_id,)).fetchone():
+                raise ApiError("Unknown question %r." % question_id)
+            if status == "open" and exclusive:
+                self.con.execute(
+                    "UPDATE questions SET status = 'closed' "
+                    "WHERE status = 'open' AND id != ?", (question_id,))
+            self.con.execute("UPDATE questions SET status = ? WHERE id = ?",
+                             (status, question_id))
+            self.con.commit()
+        return {"ok": True}
+
+    def advance(self):
+        """Close whatever is open and open the next question that has not been
+        asked yet. This is the one button an organizer needs mid-event."""
+        with self.lock:
+            rows = list(self.con.execute("SELECT * FROM questions ORDER BY position"))
+            current = next((r for r in rows if r["status"] == "open"), None)
+            if current is not None:
+                self.con.execute("UPDATE questions SET status = 'closed' WHERE id = ?",
+                                 (current["id"],))
+
+            start = current["position"] + 1 if current is not None else 0
+            nxt = next((r for r in rows
+                        if r["position"] >= start and r["status"] == "pending"), None)
+            if nxt is None:
+                # Nothing left: that was the last question.
+                self.con.commit()
+                return {"ok": True, "finished": True, "opened": None}
+
+            self.con.execute("UPDATE questions SET status = 'open' WHERE id = ?",
+                             (nxt["id"],))
+            # Advancing implies the contest is running.
+            self.con.execute(
+                "INSERT INTO config (key, value) VALUES ('contestOpen', 'true') "
+                "ON CONFLICT(key) DO UPDATE SET value = 'true'")
+            self.con.commit()
+        return {"ok": True, "finished": False, "opened": nxt["id"]}
+
+    def set_all_questions(self, status):
+        """Open or close every question at once -- the classic all-at-once
+        format, or a hard stop at the end of the event."""
+        if status not in self.VALID_STATUS:
+            raise ApiError("Unknown question status %r." % status)
+        with self.lock:
+            self.con.execute("UPDATE questions SET status = ?", (status,))
+            self.con.commit()
+        return {"ok": True}
+
     def delete_team(self, team_id):
         with self.lock:
             self.con.execute("DELETE FROM submissions WHERE team_id = ?", (team_id,))
@@ -257,10 +344,12 @@ class Database:
         return {"ok": True}
 
     def reset(self):
-        """Clear teams and submissions. Questions and answers stay."""
+        """Clear teams and submissions, and rewind the run of play. The
+        questions and the answer key stay."""
         with self.lock:
             self.con.execute("DELETE FROM submissions")
             self.con.execute("DELETE FROM teams")
+            self.con.execute("UPDATE questions SET status = 'pending'")
             for key, value in CONFIG_DEFAULTS.items():
                 if key in ("contestOpen", "showLeaderboardToTeams"):
                     self.con.execute("UPDATE config SET value = ? WHERE key = ?",
@@ -279,11 +368,39 @@ class ApiError(Exception):
 # HTTP
 # ---------------------------------------------------------------------------
 
+def strip_default_questions(js):
+    """Replace the DEFAULT_QUESTIONS array literal with an empty one.
+
+    Uses the same span-finder as questions.py, so if the array can be parsed
+    for seeding it can be removed here.
+    """
+    try:
+        array = extract_array(js)
+    except Exception:
+        # Better to serve nothing than to serve the answer key by accident.
+        raise RuntimeError("could not locate DEFAULT_QUESTIONS in estimathon.js; "
+                           "refusing to serve it")
+    return js.replace(array, "[/* withheld by server.py; see /api/state */]", 1)
+
+
+ADMIN_CODE_RE = re.compile(r"=\s*'([^']*)'\s*;\s*/\*\s*admin-passcode\s*\*/")
+
+
 def read_admin_code():
     """The organizer passcode, taken from admin.js so there is one place to
-    change it. Used here to decide who may see the answer key."""
-    m = re.search(r"var PASSCODE\s*=\s*'([^']*)'", (HERE / "admin.js").read_text(encoding="utf-8"))
-    return m.group(1) if m else "mimf"
+    change it. Used here to decide who may see the answer key.
+
+    Found by the `/* admin-passcode */` marker rather than by variable name, so
+    renaming the variable does not silently fall back to a default nobody knows.
+    """
+    m = ADMIN_CODE_RE.search((HERE / "admin.js").read_text(encoding="utf-8"))
+    if not m:
+        raise SystemExit(
+            "server.py: could not find the admin passcode in admin.js.\n"
+            "It must be a single-quoted string on a line ending with the marker:\n"
+            "    var whatever = 'yourcode'; /* admin-passcode */\n"
+            "Or pass --admin-code on the command line.")
+    return m.group(1)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -349,6 +466,14 @@ class Handler(BaseHTTPRequestHandler):
                     body.get("low"), body.get("high")))
             if path == "/api/config":
                 return self._json(self.db.patch_config(body))
+            if path == "/api/question":
+                if body.get("action") == "next":
+                    return self._json(self.db.advance())
+                if body.get("action") == "all":
+                    return self._json(self.db.set_all_questions(body.get("status")))
+                return self._json(self.db.set_question_status(
+                    body.get("questionId"), body.get("status"),
+                    exclusive=body.get("exclusive", True)))
             if path == "/api/team/delete":
                 return self._json(self.db.delete_team(body.get("teamId")))
             if path == "/api/reset":
@@ -384,13 +509,24 @@ class Handler(BaseHTTPRequestHandler):
         # or the Python source.
         if not str(target).startswith(str(self.root)) or not target.is_file():
             return self._send(404, b"Not found", "text/plain; charset=utf-8")
-        if target.suffix in (".py", ".db") or target.name.startswith("estimathon.db"):
+        # The answer key and the event database are never web content.
+        if (target.suffix in (".py", ".db") or target.name == "answers.json"
+                or target.name.startswith("estimathon.db")):
             return self._send(403, b"Forbidden", "text/plain; charset=utf-8")
 
         if target.suffix == ".html":
             html = target.read_text(encoding="utf-8")
             body = self._inject(html).encode("utf-8")
             return self._send(200, body, "text/html; charset=utf-8")
+
+        if target.name == "estimathon.js":
+            # DEFAULT_QUESTIONS is the authoring copy: it holds every question's
+            # text AND the answer key. Never ship it to a browser. In server
+            # mode the client takes its questions from /api/state, which
+            # withholds what teams should not see yet.
+            js = strip_default_questions(target.read_text(encoding="utf-8"))
+            return self._send(200, js.encode("utf-8"),
+                              "text/javascript; charset=utf-8")
 
         ctype = mimetypes.guess_type(str(target))[0] or "application/octet-stream"
         if ctype.startswith("text/") or ctype == "application/javascript":
@@ -413,6 +549,67 @@ class Handler(BaseHTTPRequestHandler):
                       html, count=1)
 
 
+# ---------------------------------------------------------------------------
+# Public URL via Cloudflare Tunnel
+# ---------------------------------------------------------------------------
+
+TUNNEL_URL_RE = re.compile(r"https://[-\w]+\.trycloudflare\.com")
+
+INSTALL_HELP = """\
+cloudflared is not installed, so there is no public URL.
+
+  Windows   winget install --id Cloudflare.cloudflared
+  macOS     brew install cloudflared
+  else      https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/
+
+The server is still running on your local network -- teams on the same wifi can
+use your machine's LAN address. Re-run with --tunnel once cloudflared is on PATH.
+"""
+
+
+def start_tunnel(port, on_url):
+    """Run `cloudflared tunnel --url` and hand the public URL to on_url().
+
+    A quick tunnel needs no Cloudflare account and no configuration. The URL is
+    random and lives only as long as this process, which is exactly right for a
+    one-evening event.
+    """
+    exe = shutil.which("cloudflared")
+    if not exe:
+        print(INSTALL_HELP)
+        return None
+
+    proc = subprocess.Popen(
+        [exe, "tunnel", "--url", "http://127.0.0.1:%d" % port, "--no-autoupdate"],
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        text=True, encoding="utf-8", errors="replace", bufsize=1)
+
+    def watch():
+        found = False
+        for line in proc.stdout:
+            if not found:
+                m = TUNNEL_URL_RE.search(line)
+                if m:
+                    found = True
+                    on_url(m.group(0))
+        if not found:
+            print("\n  cloudflared exited without giving out a URL. "
+                  "Run it by hand to see why:\n"
+                  "    cloudflared tunnel --url http://127.0.0.1:%d\n" % port)
+
+    threading.Thread(target=watch, daemon=True).start()
+    return proc
+
+
+def announce_tunnel(url, admin_path="/admin.html"):
+    line = "=" * (len(url) + 22)
+    print("\n" + line)
+    print("  TEAMS JOIN AT   %s" % url)
+    print("  DASHBOARD       %s%s" % (url, admin_path))
+    print(line)
+    print("  This URL is public and lasts until you stop the server.\n")
+
+
 def main():
     p = argparse.ArgumentParser(description="Run the Estimathon event server.")
     p.add_argument("--port", type=int, default=8000)
@@ -423,6 +620,8 @@ def main():
                    help="overwrite stored answers with the ones in estimathon.js")
     p.add_argument("--admin-code", default=None,
                    help="organizer passcode (default: the PASSCODE in admin.js)")
+    p.add_argument("--tunnel", action="store_true",
+                   help="also expose a public https URL via Cloudflare Tunnel")
     args = p.parse_args()
 
     Handler.db = Database(args.db, reseed=args.reseed)
@@ -443,12 +642,20 @@ def main():
     print("  Ctrl+C to stop\n")
 
     httpd = ThreadingHTTPServer((args.host, args.port), Handler)
+    tunnel = start_tunnel(args.port, announce_tunnel) if args.tunnel else None
+
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
         print("\nstopped")
     finally:
         httpd.server_close()
+        if tunnel:
+            tunnel.terminate()
+            try:
+                tunnel.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                tunnel.kill()
 
 
 if __name__ == "__main__":

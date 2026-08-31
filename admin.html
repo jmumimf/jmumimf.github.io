@@ -13,7 +13,7 @@
     <div class="brand">
       <span class="brand-mark">∑</span>
       <span>
-        <strong>Estimathon Control Room</strong>
+        <strong>Estimathon Admin Room</strong>
         <small id="admin-event-name">JMU MIMF Estimathon</small>
       </span>
     </div>
@@ -69,6 +69,34 @@
         <button id="reset-btn" class="btn btn-danger" type="button">Reset event</button>
         <input id="import-file" type="file" accept="application/json" hidden>
       </div>
+    </section>
+
+    <!-- ---------- run of play ---------- -->
+    <section class="card rop">
+      <div class="card-head">
+        <h2>Run of play</h2>
+        <span id="rop-progress" class="pill pill-muted">not started</span>
+      </div>
+
+      <div class="rop-main">
+        <div class="rop-current">
+          <span class="eyebrow" id="rop-label">Up next</span>
+          <p id="rop-text" class="rop-text">Press “Next question” to ask question 1.</p>
+          <p id="rop-answer" class="rop-answer"></p>
+        </div>
+        <div class="rop-actions">
+          <button id="rop-next" class="btn btn-primary btn-lg" type="button">Next question</button>
+          <button id="rop-close" class="btn btn-danger" type="button">Close this question</button>
+          <button id="rop-reopen" class="btn" type="button">Reopen</button>
+        </div>
+      </div>
+
+      <div id="rop-strip" class="rop-strip"></div>
+      <p class="hint">
+        Click any number to open that question (which closes whatever is open).
+        <button id="rop-open-all" class="btn btn-quiet" type="button">Open all at once</button>
+        <button id="rop-close-all" class="btn btn-quiet" type="button">Close all</button>
+      </p>
     </section>
 
     <!-- ---------- stats ---------- -->
