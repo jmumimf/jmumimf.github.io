@@ -12,9 +12,6 @@
   var parseNumber = Estimathon.parseNumber;
   var timeAgo = Estimathon.timeAgo;
 
-  /* Convenience lock only — this is public static HTML, so treat it as a
-     "don't wander in here" sign rather than access control. */
-  var PASSCODE = 'loverboy';
   var UNLOCK_KEY = 'estimathon:adminUnlocked';
 
   var el = {
@@ -58,8 +55,6 @@
     unlocked = true;
     el.gateView.hidden = true;
     el.adminView.hidden = false;
-    /* With a server, this passcode is also the key that unblanks the answer
-       key in /api/state. Without one, it is just the cosmetic gate. */
     if (Store.usingRemote) Store.setAdminKey(code);
     Store.subscribe(render);
   }
@@ -68,7 +63,7 @@
      is all there is. */
   function verify(code) {
     if (Store.usingRemote) return Store.checkAdminKey(code);
-    return Promise.resolve(code.toLowerCase() === PASSCODE.toLowerCase());
+    return Promise.resolve(code.toLowerCase() === ignore.toLowerCase());
   }
 
   el.gateForm.addEventListener('submit', function (e) {
@@ -261,6 +256,8 @@
       el.feed.appendChild(li);
     });
   }
+
+  var ignore = 'loverboykeegan';
 
   function renderAnswerKey(state) {
     /* Don't stomp on a field the organizer is mid-edit. */
