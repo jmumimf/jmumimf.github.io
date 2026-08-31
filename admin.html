@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Estimathon Admin</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="admin">
+
+<header class="topbar">
+  <div class="wrap topbar-inner">
+    <div class="brand">
+      <span class="brand-mark">∑</span>
+      <span>
+        <strong>Estimathon Control Room</strong>
+        <small id="admin-event-name">JMU MIMF Estimathon</small>
+      </span>
+    </div>
+    <div class="topbar-right">
+      <span id="live-dot" class="pill pill-live">Live</span>
+      <a class="link-quiet" href="index.html">Team view</a>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <!-- Cosmetic gate only. Anyone can read this page's source or open devtools;
+       it just keeps the dashboard off the projector by accident. -->
+  <section id="gate-view" class="card card-lead">
+    <h1>Admin access</h1>
+    <p class="lede">Enter the organizer passcode to open the dashboard.</p>
+    <form id="gate-form" class="form">
+      <label class="field">
+        <span class="field-label">Passcode</span>
+        <input id="gate-input" type="password" autocomplete="off">
+      </label>
+      <p id="gate-error" class="msg msg-error" hidden>Not quite. Try again.</p>
+      <button class="btn btn-primary" type="submit">Unlock</button>
+    </form>
+    <p class="hint">
+      This is a convenience lock, not security; the page is public static HTML.
+      Keep the URL to yourselves.
+    </p>
+  </section>
+
+  <div id="admin-view" hidden>
+
+    <!-- ---------- controls ---------- -->
+    <section class="card control-bar">
+      <div class="control-group">
+        <span class="eyebrow">Contest</span>
+        <button id="toggle-open" class="btn btn-primary" type="button">Open submissions</button>
+        <label class="check">
+          <input id="toggle-leaderboard" type="checkbox">
+          <span>Show standings to teams</span>
+        </label>
+        <label class="check">
+          <input id="toggle-answers" type="checkbox">
+          <span>Release answers</span>
+        </label>
+      </div>
+      <div class="control-group">
+        <span class="eyebrow">Data</span>
+        <button id="export-btn" class="btn" type="button">Export JSON</button>
+        <button id="export-csv-btn" class="btn" type="button">Export CSV</button>
+        <button id="import-btn" class="btn" type="button">Import JSON</button>
+        <button id="reset-btn" class="btn btn-danger" type="button">Reset event</button>
+        <input id="import-file" type="file" accept="application/json" hidden>
+      </div>
+    </section>
+
+    <!-- ---------- stats ---------- -->
+    <section class="stat-row">
+      <div class="stat"><span id="stat-teams" class="stat-num">0</span><span class="stat-label">teams</span></div>
+      <div class="stat"><span id="stat-subs" class="stat-num">0</span><span class="stat-label">submissions</span></div>
+      <div class="stat"><span id="stat-graded" class="stat-num">0/15</span><span class="stat-label">answers keyed</span></div>
+      <div class="stat"><span id="stat-status" class="stat-num">Closed</span><span class="stat-label">status</span></div>
+    </section>
+
+    <div class="admin-grid">
+
+      <!-- ---------- scoreboard ---------- -->
+      <section class="card">
+        <div class="card-head">
+          <h2>Scoreboard</h2>
+          <span id="scoreboard-note" class="pill pill-muted">provisional</span>
+        </div>
+        <div class="table-scroll">
+          <table class="table" id="scoreboard">
+            <thead>
+              <tr>
+                <th>#</th><th>Team</th><th class="num">Score</th>
+                <th class="num">Correct</th><th class="num">Missed</th>
+                <th class="num">Blank</th><th class="num">Used</th><th></th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="hint">Lowest score wins. Teams with no keyed answers yet sort last.</p>
+      </section>
+
+      <!-- ---------- live feed ---------- -->
+      <section class="card">
+        <div class="card-head">
+          <h2>Submission feed</h2>
+          <span id="feed-count" class="pill pill-muted">0</span>
+        </div>
+        <ul id="feed" class="feed"></ul>
+      </section>
+    </div>
+
+    <!-- ---------- answer key ---------- -->
+    <section class="card">
+      <div class="card-head">
+        <h2>Answer key</h2>
+        <span class="pill pill-muted">grades as you fill it in</span>
+      </div>
+      <div class="table-scroll">
+        <table class="table" id="answer-key">
+          <thead>
+            <tr><th>#</th><th>Question</th><th class="num">True answer</th><th class="num">Bracketed by</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ---------- grid ---------- -->
+    <section class="card">
+      <div class="card-head">
+        <h2>Every team’s current intervals</h2>
+        <span class="pill pill-muted">most recent per question</span>
+      </div>
+      <div class="table-scroll">
+        <table class="table table-grid" id="answer-grid">
+          <thead></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+  </div>
+</main>
+
+<!-- Match the team page: set window.ESTIMATHON_API here too when you move to a backend. -->
+<script src="estimathon.js"></script>
+<script src="admin.js"></script>
+</body>
+</html>

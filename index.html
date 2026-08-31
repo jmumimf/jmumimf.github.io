@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Estimathon | JMU MIMF</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="wrap topbar-inner">
+    <div class="brand">
+      <span class="brand-mark">∑</span>
+      <span>
+        <strong id="event-name">JMU MIMF Estimathon</strong>
+        <small>Estimate boldly. Bracket carefully.</small>
+      </span>
+    </div>
+    <div class="topbar-right">
+      <span id="contest-status" class="pill pill-muted">Checking…</span>
+      <a class="link-quiet" href="admin.html">Admin</a>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <!-- ==================== JOIN ==================== -->
+  <section id="join-view">
+    <div class="card card-lead">
+      <h1>Sign your team in</h1>
+      <p class="lede">
+        Pick a team name, then submit an interval (a low and a high) for each
+        question. You win by bracketing the true answer with the tightest range
+        you dare.
+      </p>
+
+      <form id="join-form" class="form" novalidate>
+        <label class="field">
+          <span class="field-label">Team name</span>
+          <input id="team-name" type="text" autocomplete="off" maxlength="60"
+                 placeholder="The Order of Magnitude" required>
+        </label>
+
+        <label class="field">
+          <span class="field-label">Team members <em>(optional)</em></span>
+          <input id="team-members" type="text" autocomplete="off" maxlength="200"
+                 placeholder="Ada, Blaise, Emmy">
+        </label>
+
+        <p id="join-error" class="msg msg-error" hidden></p>
+
+        <button class="btn btn-primary btn-lg" type="submit">Join the Estimathon</button>
+        <p class="hint">
+          Already signed in on this device? Entering the same team name puts you
+          back on your team with your submissions intact.
+        </p>
+      </form>
+    </div>
+
+    <div class="rules card">
+      <h2>How scoring works</h2>
+      <ol class="rules-list">
+        <li>Each answer is an interval: a <strong>low</strong> and a <strong>high</strong>.</li>
+        <li>You get <strong id="rule-max-subs">18</strong> submissions total, spread across
+            <strong id="rule-num-q">15</strong> questions however you like. Only your
+            <em>most recent</em> interval per question counts.</li>
+        <li>Every question costs <strong id="rule-width">0.07</strong> × (high ÷ low),
+            so a narrow interval is cheap and a wide one is not.</li>
+        <li>If your interval <em>misses</em> the answer, you also pay how far off you
+            were, in doublings: an answer 4× outside your range adds 2, 8× adds 3.</li>
+        <li>Skipping a question costs <strong id="rule-penalty">10</strong> — almost always
+            worse than a guess.</li>
+        <li><strong>Lowest total wins.</strong></li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- ==================== CONTEST ==================== -->
+  <section id="contest-view" hidden>
+    <div class="team-bar card">
+      <div>
+        <span class="eyebrow">Competing as</span>
+        <h1 id="current-team" class="team-name">;</h1>
+        <p id="current-members" class="team-members"></p>
+      </div>
+      <div class="counters">
+        <div class="counter">
+          <span id="subs-left" class="counter-num">18</span>
+          <span class="counter-label">submissions left</span>
+        </div>
+        <div class="counter">
+          <span id="qs-answered" class="counter-num">0</span>
+          <span class="counter-label">questions answered</span>
+        </div>
+        <button id="leave-btn" class="btn btn-quiet" type="button">Switch team</button>
+      </div>
+    </div>
+
+    <p id="closed-banner" class="banner" hidden>
+      Submissions are closed. Sit tight; the admins are scoring.
+    </p>
+
+    <div id="questions" class="questions"></div>
+
+    <section id="team-leaderboard" class="card" hidden>
+      <h2>Live standings</h2>
+      <div id="team-leaderboard-body"></div>
+    </section>
+  </section>
+
+</main>
+
+<footer class="wrap foot">
+  <p>Built for JMU’s Madison Institute for Mathematical Finance.</p>
+</footer>
+
+<!-- Point at a Python backend by uncommenting and setting this before the core loads:
+<script>window.ESTIMATHON_API = "https://your-host";</script>
+-->
+<script src="estimathon.js"></script>
+<script src="script.js"></script>
+</body>
+</html>

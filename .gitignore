@@ -1,0 +1,12 @@
+# Event databases — real submissions, not source
+*.db
+*.db-wal
+*.db-shm
+
+# Exports
+estimathon-*.json
+estimathon-*.csv
+results.csv
+
+__pycache__/
+*.pyc
