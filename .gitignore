@@ -1,8 +1,7 @@
-# THE ANSWER KEY. This repo publishes to jmumimf.github.io, so anything
-# committed here is public. Keep your own backup outside the repo.
+# THE ANSWER KEY
 answers.json
 
-# Event databases — real submissions, not source
+# Event databases; real submissions, not source
 *.db
 *.db-wal
 *.db-shm
@@ -14,3 +13,4 @@ results.csv
 
 __pycache__/
 *.pyc
+.vscode

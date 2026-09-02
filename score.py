@@ -38,7 +38,6 @@ WIDTH_WEIGHT = 0.07
 UNANSWERED_PENALTY = 10.0
 # ----------------------------------------------------------------------------
 
-
 def e_i(a, b, n):
     """Miss penalty in octaves: 0 if the interval brackets n, else log2 of the
     factor by which it misses."""
@@ -49,7 +48,6 @@ def e_i(a, b, n):
     off = max(abs(a / n), abs(n / b))
     return math.log2(abs(off))
 
-
 def score_i(a, b, n):
     """Score one interval. Lower is better."""
     if a <= 0 or b <= 0:
@@ -57,7 +55,6 @@ def score_i(a, b, n):
     if b < a:
         raise ValueError("high bound %r is below low bound %r" % (b, a))
     return WIDTH_WEIGHT * abs(b / a) + e_i(a, b, n)
-
 
 def score_question(interval, answer):
     """score_i, but tolerant of the two things real data does: a missing
@@ -73,7 +70,6 @@ def score_question(interval, answer):
     a, b = interval
     s = score_i(a, b, answer)
     return s, ("ok" if a <= answer <= b else "missed")
-
 
 def score_team(intervals, questions):
     """Score one team.
