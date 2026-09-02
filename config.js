@@ -17,4 +17,4 @@
  * When server.py serves these pages itself it overrides this with "/api",
  * so running locally keeps working no matter what is set here.
  * ==========================================================================*/
-window.ESTIMATHON_API = "";
+window.ESTIMATHON_API = "https://estimathon.jmumimf.workers.dev";
