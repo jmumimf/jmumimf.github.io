@@ -408,6 +408,7 @@ class Handler(BaseHTTPRequestHandler):
     db = None
     root = HERE
     admin_code = "mimf"
+    allow_origin = "*"
 
     # ----- plumbing --------------------------------------------------------
 
@@ -417,16 +418,42 @@ class Handler(BaseHTTPRequestHandler):
             return
         print("  %s  %s" % (self.command, self.path))
 
+    def _cors_headers(self):
+        """Let a page hosted elsewhere (GitHub Pages) call this API.
+
+        Without these a browser refuses the request before it is ever sent.
+        No cookies or credentials are involved, so a wildcard origin is safe
+        here: the API is public either way, and the passcode is what actually
+        guards the answer key.
+        """
+        return {
+            "Access-Control-Allow-Origin": self.allow_origin,
+            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type",
+            "Access-Control-Max-Age": "86400",
+            "Vary": "Origin",
+        }
+
     def _send(self, status, body, content_type, extra=None):
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        for k, v in self._cors_headers().items():
+            self.send_header(k, v)
         for k, v in (extra or {}).items():
             self.send_header(k, v)
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(body)
+
+    def do_OPTIONS(self):
+        """Preflight. Browsers send this before any POST carrying JSON."""
+        self.send_response(204)
+        for k, v in self._cors_headers().items():
+            self.send_header(k, v)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
 
     def _json(self, payload, status=200):
         self._send(status, json.dumps(payload).encode("utf-8"), "application/json")
@@ -622,11 +649,15 @@ def main():
                    help="organizer passcode (default: the PASSCODE in admin.js)")
     p.add_argument("--tunnel", action="store_true",
                    help="also expose a public https URL via Cloudflare Tunnel")
+    p.add_argument("--allow-origin", default="*",
+                   help="CORS origin allowed to call the API "
+                        "(e.g. https://jmumimf.github.io); default any")
     args = p.parse_args()
 
     Handler.db = Database(args.db, reseed=args.reseed)
     Handler.root = HERE
     Handler.admin_code = args.admin_code or read_admin_code()
+    Handler.allow_origin = args.allow_origin
 
     state = Handler.db.state()
     print("Estimathon server")

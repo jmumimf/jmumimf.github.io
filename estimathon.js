@@ -28,7 +28,7 @@
 
   var STORAGE_KEY = 'estimathon:v1';
   var CHANNEL_NAME = 'estimathon';
-  var POLL_MS = 2000;
+  var POLL_MS = 3000;
 
   /* --------------------------------------------------------------------- */
   /* Questions                                                              */
@@ -450,9 +450,22 @@
   global.addEventListener('storage', function (e) {
     if (e.key === STORAGE_KEY) { cache = readLocal(); notify(); }
   });
+  /* Polling budget: every open tab hits the backend on this interval, and
+     Cloudflare's free tier allows 100k requests a day. A backgrounded tab is
+     nobody's live view, so it stops polling entirely and catches up the moment
+     it comes back. 20 teams at 3s is ~24k requests an hour with every tab in
+     the foreground, which a whole event fits inside comfortably. */
   if (API) {
     Store.refresh();
-    setInterval(Store.refresh, POLL_MS);
+    setInterval(function () {
+      if (!global.document || !global.document.hidden) Store.refresh();
+    }, POLL_MS);
+
+    if (global.document) {
+      global.document.addEventListener('visibilitychange', function () {
+        if (!global.document.hidden) Store.refresh();
+      });
+    }
   }
 
   /* --------------------------------------------------------------------- */

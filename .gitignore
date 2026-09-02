@@ -1,5 +1,19 @@
-# THE ANSWER KEY
+# THE ANSWER KEY. This repo publishes to jmumimf.github.io, so anything
+# committed here is public.
 answers.json
+
+# Generated from answers.json, so it holds the key too.
+worker/seed.sql
+
+# Optional: question text moved out of estimathon.js so teams cannot read
+# ahead in devtools. Only exists if you chose that; see the README.
+questions.json
+
+# wrangler
+worker/node_modules/
+worker/.wrangler/
+# local secrets for `wrangler dev` (the .example file is safe to commit)
+worker/.dev.vars
 
 # Event databases; real submissions, not source
 *.db
@@ -14,3 +28,4 @@ results.csv
 __pycache__/
 *.pyc
 .vscode
+worker/*.md

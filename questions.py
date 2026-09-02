@@ -209,10 +209,25 @@ def load_answer_key(path=ANSWERS_FILE):
             if not k.startswith("_") and isinstance(v, (int, float))}
 
 
+QUESTIONS_FILE = HERE / "questions.json"
+
+
 def load_questions(js_file=JS_FILE, answers=None):
-    """The question set, in order, as [{'id','text','answer','unit'}, ...]."""
-    js = Path(js_file).read_text(encoding="utf-8")
-    questions = _Parser(_extract_array(js)).value()
+    """The question set, in order, as [{'id','text','answer','unit'}, ...].
+
+    Text and order come from questions.json when that file exists, otherwise
+    from DEFAULT_QUESTIONS in estimathon.js. The JSON file is the airtight
+    option: estimathon.js is downloaded by every team's browser, so a question
+    written there can be read ahead of time even before it is asked. The JSON
+    file is gitignored and never served.
+    """
+    if QUESTIONS_FILE.exists():
+        questions = json.loads(QUESTIONS_FILE.read_text(encoding="utf-8"))
+        if not isinstance(questions, list):
+            raise QuestionParseError("questions.json must contain a list of questions")
+    else:
+        js = Path(js_file).read_text(encoding="utf-8")
+        questions = _Parser(_extract_array(js)).value()
     key = load_answer_key() if answers is None else answers
 
     seen = set()

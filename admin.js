@@ -14,10 +14,15 @@
 
   var UNLOCK_KEY = 'estimathon:adminUnlocked';
 
-  /* The organizer passcode. server.py reads this line by its marker comment,
-     so the variable can be called anything, but the marker has to stay put.
-     Declared up here because the session-restore check below runs during load
-     and would otherwise read it before it was assigned. */
+  /* LOCAL-ONLY passcode, used when there is no backend at all. This file is
+     public — GitHub Pages serves it verbatim — so treat this string as
+     published, not secret.
+     In production the Worker's ADMIN_CODE secret is what gates the answer key,
+     and it MUST be a different string from this one, or reading this file is
+     enough to get in.
+     server.py reads this line by its marker comment, so the variable can be
+     called anything but the marker has to stay. Declared up here because the
+     session-restore check below runs during load. */
   var ignore = 'loverboykeegan'; /* admin-passcode */
 
   var el = {

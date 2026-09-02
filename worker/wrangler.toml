@@ -1,0 +1,18 @@
+name = "estimathon"
+main = "src/index.js"
+compatibility_date = "2026-01-01"
+
+# The origin allowed to call this API. Lock it to the Pages site once it works;
+# "*" is handy while you are testing from a file:// page or localhost.
+[vars]
+ALLOW_ORIGIN = "https://jmumimf.github.io"
+
+# The organizer passcode is NOT here -- it would end up in the repo.
+# Set it once, encrypted, with:
+#     wrangler secret put ADMIN_CODE
+
+[[d1_databases]]
+binding = "DB"
+database_name = "estimathon"
+# Paste the id that `wrangler d1 create estimathon` prints.
+database_id = "12658311-f771-43c1-b71b-b1d4a567459b"
