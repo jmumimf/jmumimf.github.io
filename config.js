@@ -1,5 +1,5 @@
 /* ============================================================================
- * config.js — where the pages look for their backend.
+ * config.js, where the pages look for their backend.
  *
  * This is the ONE file to edit when you deploy. It is loaded before everything
  * else on both the Estimathon and the forms pages.

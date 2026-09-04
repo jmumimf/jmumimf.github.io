@@ -1,6 +1,6 @@
 # JMU MIMF
 
-The club website: <https://jmumimf.github.io>
+The organization website: <https://jmumimf.github.io>
 
 One home page, with each feature as its own tab. Today that's the **Estimathon**
 contest and a **forms** system for sign-ups and interview scheduling. Both share
@@ -9,9 +9,9 @@ one backend, one stylesheet, and one organizer passcode.
 ## Layout
 
 ```
-index.html            the home page — the only page at the root
+index.html            the home page: the only page at the root
 config.js             THE FILE YOU EDIT TO DEPLOY (backend URL + local passcode)
-answers.json          the Estimathon answer key — gitignored, never commit
+answers.json          the Estimathon answer key: gitignored, never commit
 
 assets/               shared by every page
   style.css
@@ -27,7 +27,7 @@ estimathon/           /estimathon/
 forms/                /forms/
   index.html          pick a form and fill it in
   admin.html          read and download responses
-  forms.json          THE FORM DEFINITIONS — edit this to change a form
+  forms.json          THE FORM DEFINITIONS: edit this to change a form
   core.js             field types, rendering, validation
   app.js  admin.js
   README.md           how to write a form and read the replies
@@ -65,7 +65,7 @@ Then <http://localhost:8000>. The admin passcode locally is `local-dev`
 SQLite file, so it behaves exactly like production without touching it.
 
 **Publish a change.** Commit and push. GitHub Pages redeploys in a minute or
-two. Only edits under `worker/` need anything more — see below.
+two. Only edits under `worker/` need anything more; see below.
 
 ## Where the pieces live
 
@@ -76,7 +76,7 @@ two. Only edits under `worker/` need anything more — see below.
 | Read form responses | `/forms/admin.html` |
 | Change Estimathon questions | `estimathon/core.js`, then reseed |
 | Change Estimathon answers | `answers.json`, then reseed |
-| Run an Estimathon | `/estimathon/admin.html` — see `estimathon/README.md` |
+| Run an Estimathon | `/estimathon/admin.html`; see `estimathon/README.md` |
 | Change the look of anything | `assets/style.css` |
 | Point the site at a backend | `config.js` |
 | Add a whole new tab | `docs/ADDING-A-PAGE.md` |
@@ -84,7 +84,7 @@ two. Only edits under `worker/` need anything more — see below.
 
 ## How the backend works
 
-GitHub Pages serves files and nothing else — it cannot run code or store data.
+GitHub Pages serves files and nothing else; it cannot run code or store data.
 So the pages are static, and everything shared lives in a Cloudflare Worker
 backed by D1 (which is SQLite). `tools/server.py` implements the same API
 locally for development.
@@ -94,7 +94,7 @@ locally for development.
 to `forms.json` and `localStorage`. `tools/server.py` overrides that with
 `/api` on a line it injects into each page. Only the real deployed origin
 reaches the real Worker. This is why a page opened from disk, or from Live
-Server, will not see production data — that is deliberate, and it is also what
+Server, will not see production data; that is deliberate, and it is also what
 stops you from testing against live submissions by accident.
 
 Full setup, update, and shutdown instructions: **[docs/SETUP.md](docs/SETUP.md)**.
@@ -116,7 +116,7 @@ once. The four pages are `/`, `/estimathon/`, `/forms/`, and the two
 
 ## Conventions worth keeping
 
-- **Public vs. secret.** Everything in this repo is world-readable — it is
+- **Public vs. secret.** Everything in this repo is world-readable; it is
   published. The Estimathon answer key is the only secret, and it lives in
   `answers.json` (gitignored) and in D1. The passcode in `config.js` is a
   local-development convenience; the real one is the Worker's `ADMIN_CODE`.

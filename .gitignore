@@ -29,4 +29,5 @@ results.csv
 __pycache__/
 *.pyc
 .vscode
-worker/*.md
+docs/
+worker/README.md

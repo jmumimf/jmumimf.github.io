@@ -5,7 +5,7 @@
  *   1. CONFIG + the question set
  *   2. Store: read/write contest state, notify listeners
  *   3. Scoring: the Estimathon score for a team
- *
+ *30
  * STORAGE BACKENDS
  * ----------------
  * By default everything lives in localStorage and syncs between tabs on the
@@ -57,10 +57,10 @@
 
   var CONFIG_DEFAULTS = {
     eventName: 'JMU MIMF Estimathon',
-    /* Standard rules: 18 submissions total, spread across the 15 questions
+    /* Standard rules: 30 submissions total, spread across the 15 questions
        however the team likes. Only a team's most recent interval per question
        counts toward the final score. */
-    maxSubmissions: 18,
+    maxSubmissions: 30,
     /* Scoring constants. These MUST match WIDTH_WEIGHT and UNANSWERED_PENALTY
        in score.py — `py -3 score.py --selftest` fails if they drift. */
     widthWeight: 0.07,
