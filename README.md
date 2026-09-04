@@ -1,158 +1,128 @@
-# JMU MIMF Estimathon
+# JMU MIMF
 
-Teams sign in at <https://jmumimf.github.io> and answer one question at a time.
-Organizers drive the run of play and watch the scoreboard from `/admin.html`.
+The club website: <https://jmumimf.github.io>
 
-| File | What it is |
+One home page, with each feature as its own tab. Today that's the **Estimathon**
+contest and a **forms** system for sign-ups and interview scheduling. Both share
+one backend, one stylesheet, and one organizer passcode.
+
+## Layout
+
+```
+index.html            the home page — the only page at the root
+config.js             THE FILE YOU EDIT TO DEPLOY (backend URL + local passcode)
+answers.json          the Estimathon answer key — gitignored, never commit
+
+assets/               shared by every page
+  style.css
+  admin-gate.js       the passcode screen both dashboards use
+
+estimathon/           /estimathon/
+  index.html          teams play here
+  admin.html          organizers run the event here
+  core.js             questions, storage, scoring
+  app.js  admin.js    one file per page
+  README.md           how to run an Estimathon
+
+forms/                /forms/
+  index.html          pick a form and fill it in
+  admin.html          read and download responses
+  forms.json          THE FORM DEFINITIONS — edit this to change a form
+  core.js             field types, rendering, validation
+  app.js  admin.js
+  README.md           how to write a form and read the replies
+
+tools/                Python. Stdlib only, no pip install
+  server.py           local dev server + the same API, on SQLite
+  score.py            the Estimathon scoring formula and grading CLI
+  questions.py        reads the questions and the answer key
+  make_seed.py        builds worker/seed.sql
+  README.md
+
+worker/               the production backend: Cloudflare Worker + D1
+  src/index.js        the whole API
+  schema.sql          tables
+  wrangler.toml       config
+
+docs/
+  SETUP.md            first-time setup, updating, and shutting down
+  ADDING-A-PAGE.md    how to add a third tab
+```
+
+Each folder is one thing. A page and everything only that page uses live
+together; anything two pages share is in `assets/`.
+
+## Quick start
+
+**Work on it locally.** Nothing to install:
+
+```
+py -3 tools/server.py
+```
+
+Then <http://localhost:8000>. The admin passcode locally is `local-dev`
+(`ADMIN_PASSCODE` in `config.js`). This runs the real API against a local
+SQLite file, so it behaves exactly like production without touching it.
+
+**Publish a change.** Commit and push. GitHub Pages redeploys in a minute or
+two. Only edits under `worker/` need anything more — see below.
+
+## Where the pieces live
+
+| I want to… | Go to |
 | --- | --- |
-| `index.html` / `script.js` | Team page: sign in, submit low/high intervals |
-| `admin.html` / `admin.js` | Dashboard: run of play, arrivals, live feed, scoreboard |
-| `estimathon.js` | Shared core: question list, storage, scoring |
-| `config.js` | **The one line that points the site at its backend** |
-| `style.css` | Shared styles |
-| `worker/` | The production API: Cloudflare Worker + D1. See `worker/README.md` |
-| `server.py` | The same API for local use: static pages + SQLite |
-| `score.py` | The scoring formula, and a CLI that grades an event |
-| `questions.py` / `make_seed.py` | Read the questions and answers; build the D1 seed |
-| `answers.json` | **The answer key. Gitignored — never commit it.** |
+| Change the home page | `index.html` |
+| Change a form's questions | `forms/forms.json`, then reseed |
+| Read form responses | `/forms/admin.html` |
+| Change Estimathon questions | `estimathon/core.js`, then reseed |
+| Change Estimathon answers | `answers.json`, then reseed |
+| Run an Estimathon | `/estimathon/admin.html` — see `estimathon/README.md` |
+| Change the look of anything | `assets/style.css` |
+| Point the site at a backend | `config.js` |
+| Add a whole new tab | `docs/ADDING-A-PAGE.md` |
+| Set up from scratch, or shut down | `docs/SETUP.md` |
 
-## Making jmumimf.github.io playable
+## How the backend works
 
-GitHub Pages serves files and nothing else — it cannot run code or store
-submissions. So the pages live on Pages and the shared state lives in a
-Cloudflare Worker backed by D1: free, always on, no laptop involved.
+GitHub Pages serves files and nothing else — it cannot run code or store data.
+So the pages are static, and everything shared lives in a Cloudflare Worker
+backed by D1 (which is SQLite). `tools/server.py` implements the same API
+locally for development.
 
-**Setup is a one-time job: follow [`worker/README.md`](worker/README.md).**
-The short version:
+`config.js` decides which one a page talks to, and it picks by origin: on
+`localhost` or `file://` it defaults to **no backend**, so the pages fall back
+to `forms.json` and `localStorage`. `tools/server.py` overrides that with
+`/api` on a line it injects into each page. Only the real deployed origin
+reaches the real Worker. This is why a page opened from disk, or from Live
+Server, will not see production data — that is deliberate, and it is also what
+stops you from testing against live submissions by accident.
 
-1. Install Node, then `npm install -g wrangler`, then `wrangler login`.
-2. `wrangler d1 create estimathon`, paste the id into `worker/wrangler.toml`.
-3. Load `schema.sql`, then `py -3 make_seed.py` and load `seed.sql`.
-4. `wrangler secret put ADMIN_CODE` — the organizer passcode.
-5. `wrangler deploy`, then put the printed URL in `config.js` and push.
+Full setup, update, and shutdown instructions: **[docs/SETUP.md](docs/SETUP.md)**.
 
-After that there is nothing to run. Open the dashboard and start the event.
+## Testing your changes
 
-## Local development
-
-```
-py -3 server.py            # http://localhost:8000
-py -3 server.py --tunnel   # ...plus a temporary public URL, needs cloudflared
-```
-
-`server.py` implements the same API against a local SQLite file and serves the
-pages itself, overriding `config.js` with its own `/api`. So local work never
-touches production, and the browser code is identical either way.
-
-With `config.js` empty and no server at all, the pages fall back to
-`localStorage` — one browser only, no sharing. Useful for poking at the UI.
-
-## The run of play
-
-Every question starts **pending**: teams cannot see it, and its text is never
-sent to their browsers. The dashboard's *Run of play* panel drives the event.
-
-1. Open `/admin.html` and enter the organizer passcode.
-2. **Next question** — asks question 1 and opens submissions.
-3. Teams submit intervals, revising as often as they like while it is open.
-4. **Next question** — closes question 1 for good, opens question 2. Repeat.
-5. After the last one, **Close all**.
-6. **Release answers** — now, and only now, teams see the answers and how each
-   of their intervals scored.
-7. **Export JSON** for the record.
-
-The numbered strip jumps to any question (opening one closes whatever was
-open); **Reopen** undoes an accidental close; **Open all at once** switches to
-the classic format where teams see everything and budget their own time.
-
-## Scoring
-
-For an interval `[a, b]` against the true answer `n`:
+There is no test runner in the repo; the checks live outside it. What you can
+run here:
 
 ```
-e_i     = 0                      if a <= n <= b
-        = log2(max(a/n, n/b))    otherwise      -- how far off, in doublings
-
-score_i = 0.07 * (b / a) + e_i
+py -3 tools/score.py --selftest    # scoring formula + JS/Python constants agree
+py -3 tools/questions.py           # print the parsed question list
+py -3 tools/make_seed.py           # rebuild the D1 seed, printing what it found
 ```
 
-A team's score is the **sum** over all questions; an unanswered question costs
-`10.0`. **Lowest total wins.**
+After any change, load every page under `tools/server.py` and click through
+once. The four pages are `/`, `/estimathon/`, `/forms/`, and the two
+`admin.html` dashboards.
 
-A bracketed answer costs only its width: 3× wide costs 0.21, 100× wide costs 7.
-Missing adds the miss on top — an answer 8× outside your range adds 3. Skipping
-costs 10, worse than almost any real guess, so teams should always answer.
+## Conventions worth keeping
 
-```
-py -3 score.py export.json           # grade an admin JSON export
-py -3 score.py                       # or the local estimathon.db
-py -3 score.py --out results.csv
-py -3 score.py --selftest            # checks the formula and the JS/Python constants
-```
-
-The formula lives in `score_i`/`e_i` in `score.py` and, identically, in
-`Scoring.scoreQuestion` in `estimathon.js`, so the live board matches the
-grader. `--selftest` fails if the two copies of the constants drift.
-
-A question with no answer yet is skipped, so a partly keyed event still ranks —
-the dashboard says *provisional* until every answer is in.
-
-## Questions and answers
-
-- **Question text and order**: `DEFAULT_QUESTIONS` in `estimathon.js`.
-- **Answers**: `answers.json`, which is gitignored and never served.
-- `py -3 questions.py` prints the merged list — the quick way to check you did
-  not break the array.
-- After editing either, `py -3 make_seed.py` and re-run the D1 execute. No
-  redeploy needed; the Worker reads questions from D1, not from its code.
-
-Three layers keep the answer key away from teams:
-
-1. It is not in `estimathon.js` (`answer: null` for every question there).
-2. `GET /state` blanks every answer unless the request carries the organizer
-   passcode, or you have pressed **Release answers**.
-3. `server.py` additionally strips `DEFAULT_QUESTIONS` out of `estimathon.js`
-   when it serves it.
-
-**One gap to know about.** GitHub Pages serves `estimathon.js` verbatim, so the
-*question text* is readable in devtools before a question is asked. The answers
-are not there, so this only lets someone read ahead. If that bothers you, move
-the questions into a `questions.json` file in the repo root (same shape:
-`[{"id","text","unit"}, …]`) — `questions.py` prefers it when it exists, and it
-is gitignored, so nothing but D1 ever has the text. Everything else keeps
-working.
-
-## Data model
-
-SQLite in both places — D1 in production, a local file for `server.py`:
-`questions` (with a `status` of pending/open/closed), `teams`, `submissions`,
-`config`.
-
-`submissions` is append-only; every attempt is kept with an epoch-millisecond
-timestamp. **Only the latest submission per (team, question) counts.** The CSV
-export flattens it one row per submission with an `is_latest` column.
-
-## API
-
-Same contract in the Worker and `server.py`. The client polls `GET /state` every
-3 seconds, pauses while the tab is backgrounded, and refreshes after every write.
-
-| Method + path | Body | Notes |
-| --- | --- | --- |
-| `GET /state` | — | `?key=<passcode>` to include answers and pending text |
-| `GET /admin-check?key=` | — | `{ok: bool}` |
-| `GET /health` | — | sanity check after deploying |
-| `POST /join` | `{name, members}` | same name (any case) rejoins the same team |
-| `POST /submit` | `{teamId, questionId, low, high}` | cap, gate and bounds enforced here |
-| `POST /question` | `{questionId, status}`, `{action:"next"}`, `{action:"all", status}` | run of play |
-| `POST /config` | partial patch | also `{answer: {questionId, value}}` |
-| `POST /team/delete` | `{teamId}` | |
-| `POST /reset` | `{}` | clears teams and submissions, rewinds to all-pending |
-
-## Notes
-
-- `server.py`, `score.py` and `questions.py` are stdlib only. No `pip install`.
-- The dashboard URL is not secret. Anyone who has it can see teams and
-  submissions; the passcode is what gates the answer key.
-- Team names are unique and case-insensitive, which is how a team recovers from
-  a refresh or adds a second device.
+- **Public vs. secret.** Everything in this repo is world-readable — it is
+  published. The Estimathon answer key is the only secret, and it lives in
+  `answers.json` (gitignored) and in D1. The passcode in `config.js` is a
+  local-development convenience; the real one is the Worker's `ADMIN_CODE`.
+- **Validate twice.** Anything a form or a submission enforces in the browser is
+  enforced again in `worker/src/index.js` and `tools/server.py`. The browser
+  copy is for fast feedback; the server copy is the one that counts.
+- **Data lives in D1, definitions live in files.** Questions, answers, and form
+  definitions are authored in files and seeded into the database. Responses and
+  submissions only ever live in the database.

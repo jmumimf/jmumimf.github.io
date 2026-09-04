@@ -5,8 +5,9 @@ answers.json
 # Generated from answers.json, so it holds the key too.
 worker/seed.sql
 
-# Optional: question text moved out of estimathon.js so teams cannot read
-# ahead in devtools. Only exists if you chose that; see the README.
+# Optional: question text moved out of estimathon/core.js so teams cannot
+# read ahead in devtools. Only exists if you chose that; see
+# estimathon/README.md.
 questions.json
 
 # wrangler

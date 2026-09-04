@@ -1,0 +1,58 @@
+[
+  {
+    "id": "interest",
+    "title": "Interest Form",
+    "description": "Tell us a little about yourself and we'll keep you in the loop about meetings, speakers, and competitions.",
+    "status": "open",
+    "submitLabel": "Send it in",
+    "confirmation": "Thanks — you're on the list. Watch your email for our next meeting.",
+    "fields": [
+      { "id": "name", "type": "short_text", "label": "Full name", "required": true },
+      { "id": "email", "type": "email", "label": "JMU email", "help": "We only use this for club announcements.", "required": true },
+      { "id": "year", "type": "single_select", "label": "Year", "required": true,
+        "options": ["First year", "Sophomore", "Junior", "Senior", "Graduate student"] },
+      { "id": "major", "type": "short_text", "label": "Major (or intended major)", "required": false },
+      { "id": "interests", "type": "multi_select", "label": "What are you most interested in?",
+        "help": "Pick as many as you like.", "required": false, "allowOther": true,
+        "options": ["Quantitative trading", "Investment banking", "Actuarial science", "Data science",
+                    "Risk management", "Academic research", "Competitions and puzzles"] },
+      { "id": "experience", "type": "scale", "label": "How much finance background do you have?",
+        "required": false, "min": 1, "max": 5, "minLabel": "None at all", "maxLabel": "Quite a lot" },
+      { "id": "heard", "type": "dropdown", "label": "How did you hear about us?", "required": false,
+        "options": ["A friend", "A professor", "Instagram", "Club fair", "The Estimathon", "Somewhere else"] },
+      { "id": "questions", "type": "long_text", "label": "Anything you'd like us to cover this semester?",
+        "required": false }
+    ]
+  },
+  {
+    "id": "interview",
+    "title": "Interview Timeslot Form",
+    "description": "Pick every window that works for you. We'll find the slot that fits the most people and email you a confirmed time.",
+    "status": "open",
+    "submitLabel": "Submit availability",
+    "confirmation": "Got it. We'll email you a confirmed interview time once everyone has responded.",
+    "fields": [
+      { "id": "name", "type": "short_text", "label": "Full name", "required": true },
+      { "id": "email", "type": "email", "label": "JMU email", "required": true },
+      { "id": "role", "type": "single_select", "label": "Which position are you interviewing for?",
+        "required": true,
+        "options": ["Analyst", "Portfolio Manager", "Events Coordinator", "Treasurer", "Not sure yet"] },
+      { "id": "availability", "type": "timeslot", "label": "When are you free?",
+        "help": "Check every window that works. The more you pick, the easier this gets for everyone.",
+        "required": true, "multiple": true, "minChoices": 1,
+        "options": [
+          "Mon 10:00–10:30 AM", "Mon 10:30–11:00 AM", "Mon 2:00–2:30 PM", "Mon 2:30–3:00 PM",
+          "Tue 10:00–10:30 AM", "Tue 10:30–11:00 AM", "Tue 3:00–3:30 PM", "Tue 3:30–4:00 PM",
+          "Wed 11:00–11:30 AM", "Wed 11:30 AM–12:00 PM", "Wed 4:00–4:30 PM", "Wed 4:30–5:00 PM",
+          "Thu 9:00–9:30 AM", "Thu 9:30–10:00 AM", "Thu 1:00–1:30 PM", "Thu 1:30–2:00 PM",
+          "Fri 10:00–10:30 AM", "Fri 10:30–11:00 AM", "Fri 1:00–1:30 PM", "Fri 1:30–2:00 PM"
+        ] },
+      { "id": "preferred", "type": "short_text", "label": "If you have a strong preference, which one?",
+        "required": false },
+      { "id": "remote", "type": "single_select", "label": "In person or over Zoom?", "required": true,
+        "options": ["In person", "Zoom", "Either is fine"] },
+      { "id": "notes", "type": "long_text", "label": "Anything we should know?",
+        "help": "Accommodations, a hard stop, a class that runs late — anything.", "required": false }
+    ]
+  }
+]

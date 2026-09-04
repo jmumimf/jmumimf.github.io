@@ -70,6 +70,12 @@ async function readJson(request) {
   }
 }
 
+function requireAdmin(body, env) {
+  if (!codeMatches(body && body.key, env.ADMIN_CODE)) {
+    throw new ApiError('Organizer passcode required.', 401);
+  }
+}
+
 /* Constant-time-ish compare so the passcode is not guessable by timing. It is
    a club event, not a bank, but this costs nothing. */
 function codeMatches(given, expected) {
@@ -311,6 +317,160 @@ async function reset(db) {
 }
 
 /* -------------------------------------------------------------------------- */
+/* forms                                                                      */
+/* -------------------------------------------------------------------------- */
+
+const CHOICE_TYPES = ['single_select', 'multi_select', 'dropdown', 'timeslot'];
+
+function isMultiField(field) {
+  if (field.type === 'timeslot') return field.multiple !== false;
+  return field.type === 'multi_select';
+}
+
+function shapeForm(row) {
+  let fields = [];
+  try {
+    fields = JSON.parse(row.fields);
+  } catch {
+    fields = [];
+  }
+  return {
+    id: row.id,
+    title: row.title,
+    description: row.description,
+    status: row.status,
+    submitLabel: row.submit_label,
+    confirmation: row.confirmation,
+    fields,
+  };
+}
+
+async function listForms(db) {
+  const { results } = await db.prepare('SELECT * FROM forms ORDER BY position, id').all();
+  return { forms: results.map(shapeForm) };
+}
+
+async function listResponses(db, formId) {
+  const query = formId
+    ? db.prepare('SELECT * FROM form_responses WHERE form_id = ? ORDER BY submitted_at DESC')
+        .bind(formId)
+    : db.prepare('SELECT * FROM form_responses ORDER BY submitted_at DESC');
+  const { results } = await query.all();
+  return {
+    responses: results.map((r) => {
+      let answers = {};
+      try {
+        answers = JSON.parse(r.answers);
+      } catch {
+        answers = {};
+      }
+      return { id: r.id, formId: r.form_id, submittedAt: r.submitted_at, answers };
+    }),
+  };
+}
+
+/* The browser checks these rules too, so people get told early. This copy is
+   the one that counts — a form post can come from anywhere. */
+function validateAnswers(form, answers) {
+  const clean = {};
+
+  for (const field of form.fields) {
+    let value = answers[field.id];
+    const multi = isMultiField(field);
+
+    if (multi) {
+      if (value === undefined || value === null || value === '') value = [];
+      if (!Array.isArray(value)) value = [value];
+      value = value.map((v) => String(v).trim()).filter(Boolean).slice(0, 200);
+    } else {
+      if (Array.isArray(value)) value = value[0];
+      value = value === undefined || value === null ? '' : String(value).trim();
+      if (value.length > 5000) value = value.slice(0, 5000);
+    }
+
+    const empty = multi ? value.length === 0 : value === '';
+
+    if (field.required && empty) {
+      throw new ApiError('"' + field.label + '" is required.');
+    }
+    if (empty) continue;
+
+    if (field.type === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
+      throw new ApiError('"' + field.label + '" needs a valid email address.');
+    }
+
+    if (field.type === 'number') {
+      const n = Number(value);
+      if (!Number.isFinite(n)) throw new ApiError('"' + field.label + '" must be a number.');
+      if (field.min != null && n < field.min) {
+        throw new ApiError('"' + field.label + '" must be at least ' + field.min + '.');
+      }
+      if (field.max != null && n > field.max) {
+        throw new ApiError('"' + field.label + '" must be at most ' + field.max + '.');
+      }
+    }
+
+    if (multi) {
+      if (field.minChoices && value.length < field.minChoices) {
+        throw new ApiError('Pick at least ' + field.minChoices + ' for "' + field.label + '".');
+      }
+      if (field.maxChoices && value.length > field.maxChoices) {
+        throw new ApiError('Pick at most ' + field.maxChoices + ' for "' + field.label + '".');
+      }
+    }
+
+    /* An answer outside the option list is only allowed where the field says
+       so, which stops a hand-rolled POST from stuffing junk into a dropdown. */
+    if (CHOICE_TYPES.includes(field.type) && !field.allowOther) {
+      const allowed = field.options || [];
+      const given = multi ? value : [value];
+      if (given.some((v) => !allowed.includes(v))) {
+        throw new ApiError('"' + field.label + '" has an answer that is not one of the options.');
+      }
+    }
+
+    clean[field.id] = value;
+  }
+
+  return clean;
+}
+
+async function submitForm(db, body) {
+  const row = await db.prepare('SELECT * FROM forms WHERE id = ?').bind(body.formId).first();
+  if (!row) throw new ApiError('Unknown form.', 404);
+
+  const form = shapeForm(row);
+  if (form.status === 'closed') throw new ApiError('This form is closed.');
+
+  const answers = validateAnswers(form, body.answers || {});
+  const entry = {
+    id: uid('resp'),
+    formId: form.id,
+    submittedAt: Date.now(),
+    answers,
+  };
+
+  await db.prepare(
+    'INSERT INTO form_responses (id, form_id, submitted_at, answers) VALUES (?, ?, ?, ?)'
+  ).bind(entry.id, entry.formId, entry.submittedAt, JSON.stringify(answers)).run();
+
+  return { response: entry };
+}
+
+async function setFormStatus(db, formId, status) {
+  if (status !== 'open' && status !== 'closed') throw new ApiError('Unknown form status.');
+  const result = await db.prepare('UPDATE forms SET status = ? WHERE id = ?')
+    .bind(status, formId).run();
+  if (!result.meta.changes) throw new ApiError('Unknown form.', 404);
+  return { ok: true };
+}
+
+async function deleteResponse(db, responseId) {
+  await db.prepare('DELETE FROM form_responses WHERE id = ?').bind(responseId).run();
+  return { ok: true };
+}
+
+/* -------------------------------------------------------------------------- */
 /* routing                                                                    */
 /* -------------------------------------------------------------------------- */
 
@@ -337,6 +497,17 @@ export default {
         }
         if (path === '/admin-check') {
           return json({ ok: codeMatches(url.searchParams.get('key'), env.ADMIN_CODE) }, env);
+        }
+        if (path === '/forms') {
+          // Form questions are public by nature — people have to read them to
+          // answer them. Only the responses are gated.
+          return json(await listForms(env.DB), env);
+        }
+        if (path === '/forms/responses') {
+          if (!codeMatches(url.searchParams.get('key'), env.ADMIN_CODE)) {
+            throw new ApiError('Organizer passcode required.', 401);
+          }
+          return json(await listResponses(env.DB, url.searchParams.get('formId')), env);
         }
         if (path === '/health') {
           const q = await env.DB.prepare('SELECT COUNT(*) AS n FROM questions').first();
@@ -392,6 +563,16 @@ export default {
             return json(await deleteTeam(env.DB, body.teamId), env);
           case '/reset':
             return json(await reset(env.DB), env);
+
+          /* ----- forms ----- */
+          case '/forms/submit':
+            return json(await submitForm(env.DB, body), env);
+          case '/forms/status':
+            requireAdmin(body, env);
+            return json(await setFormStatus(env.DB, body.formId, body.status), env);
+          case '/forms/response/delete':
+            requireAdmin(body, env);
+            return json(await deleteResponse(env.DB, body.responseId), env);
           default:
             return json({ error: 'No such endpoint.' }, env, 404);
         }

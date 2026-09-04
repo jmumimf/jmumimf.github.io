@@ -4,23 +4,24 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Estimathon Admin</title>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="../assets/style.css">
 </head>
 <body class="admin">
 
 <header class="topbar">
   <div class="wrap topbar-inner">
-    <div class="brand">
+    <a class="brand" href="../">
       <span class="brand-mark">∑</span>
       <span>
         <strong>Estimathon Admin Room</strong>
         <small id="admin-event-name">JMU MIMF Estimathon</small>
       </span>
-    </div>
-    <div class="topbar-right">
+    </a>
+    <nav class="topbar-right">
       <span id="live-dot" class="pill pill-live">Live</span>
-      <a class="link-quiet" href="index.html">Team view</a>
-    </div>
+      <a class="link-quiet" href="./">Team view</a>
+      <a class="link-quiet" href="../forms/admin.html">Form responses</a>
+    </nav>
   </div>
 </header>
 
@@ -173,8 +174,9 @@
   </div>
 </main>
 
-<script src="config.js"></script>
-<script src="estimathon.js"></script>
+<script src="../config.js"></script>
+<script src="../assets/admin-gate.js"></script>
+<script src="core.js"></script>
 <script src="admin.js"></script>
 </body>
 </html>

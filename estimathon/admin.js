@@ -1,6 +1,8 @@
 /* ============================================================================
- * admin.js — the organizer dashboard: who joined, what they submitted,
- * where they stand, and the answer key that drives scoring.
+ * estimathon-admin.js — the organizer dashboard: who joined, what they
+ * submitted, where they stand, and the answer key that drives scoring.
+ *
+ * The passcode screen lives in admin-gate.js, shared with the forms dashboard.
  * ==========================================================================*/
 (function () {
   'use strict';
@@ -11,19 +13,6 @@
   var fmtScore = Estimathon.formatScore;
   var parseNumber = Estimathon.parseNumber;
   var timeAgo = Estimathon.timeAgo;
-
-  var UNLOCK_KEY = 'estimathon:adminUnlocked';
-
-  /* LOCAL-ONLY passcode, used when there is no backend at all. This file is
-     public — GitHub Pages serves it verbatim — so treat this string as
-     published, not secret.
-     In production the Worker's ADMIN_CODE secret is what gates the answer key,
-     and it MUST be a different string from this one, or reading this file is
-     enough to get in.
-     server.py reads this line by its marker comment, so the variable can be
-     called anything but the marker has to stay. Declared up here because the
-     session-restore check below runs during load. */
-  var ignore = 'loverboykeegan'; /* admin-passcode */
 
   var el = {
     gateView:    document.getElementById('gate-view'),
@@ -70,43 +59,18 @@
 
   /* -------------------------------------------------------------- the gate */
 
-  var unlocked = false;
-
-  function unlock(code) {
-    if (unlocked) return;
-    unlocked = true;
-    el.gateView.hidden = true;
-    el.adminView.hidden = false;
-    if (Store.usingRemote) Store.setAdminKey(code);
-    Store.subscribe(render);
-  }
-
-  /* Server present -> the server decides. Browser-local -> the constant above
-     is all there is. */
-  function verify(code) {
-    if (Store.usingRemote) return Store.checkAdminKey(code);
-    return Promise.resolve(code.toLowerCase() === ignore.toLowerCase());
-  }
-
-  el.gateForm.addEventListener('submit', function (e) {
-    e.preventDefault();
-    var code = el.gateInput.value.trim();
-    verify(code).then(function (ok) {
-      if (!ok) {
-        el.gateError.hidden = false;
-        el.gateInput.select();
-        return;
-      }
-      try { sessionStorage.setItem(UNLOCK_KEY, code); } catch (e2) {}
-      unlock(code);
-    });
+  AdminGate.mount({
+    gate: el.gateView,
+    form: el.gateForm,
+    input: el.gateInput,
+    error: el.gateError,
+    view: el.adminView,
+    onUnlock: function (code) {
+      /* The same passcode is the key that unblanks the answer key in /state. */
+      if (Store.usingRemote) Store.setAdminKey(code);
+      Store.subscribe(render);
+    }
   });
-
-  /* Restore an unlocked session on refresh. */
-  try {
-    var saved = sessionStorage.getItem(UNLOCK_KEY);
-    if (saved) verify(saved).then(function (ok) { if (ok) unlock(saved); });
-  } catch (e) { /* private mode: just show the gate */ }
 
   /* ------------------------------------------------------------- controls  */
 

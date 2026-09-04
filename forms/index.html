@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Forms | JMU MIMF</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="wrap topbar-inner">
+    <a class="brand" href="../">
+      <span class="brand-mark">∑</span>
+      <span>
+        <strong>JMU MIMF</strong>
+        <small>Madison Institute for Mathematical Finance</small>
+      </span>
+    </a>
+    <nav class="topbar-right">
+      <a class="link-quiet" href="../estimathon/">Estimathon</a>
+      <a class="link-quiet is-current" href="./">Forms</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <!-- ==================== PICKER ==================== -->
+  <section id="picker-view">
+    <div class="page-head">
+      <h1>Forms</h1>
+      <p class="lede">Pick the one you need. Everything goes straight to the club officers.</p>
+    </div>
+    <div id="form-list" class="form-list">
+      <p class="empty">Loading forms…</p>
+    </div>
+  </section>
+
+  <!-- ==================== ONE FORM ==================== -->
+  <section id="form-view" hidden>
+    <button id="back-btn" class="btn btn-quiet back-btn" type="button">← All forms</button>
+
+    <div class="card card-lead">
+      <h1 id="form-title">—</h1>
+      <p id="form-description" class="lede"></p>
+      <p id="form-closed" class="banner" hidden>
+        This form is closed right now. Check back later, or email an officer.
+      </p>
+      <p class="hint" id="required-note">Fields marked <span class="ff-required">*</span> are required.</p>
+    </div>
+
+    <form id="form-body" class="form-body" novalidate>
+      <div id="fields"></div>
+      <p id="form-error" class="msg msg-error" hidden></p>
+      <div class="form-actions">
+        <button id="submit-btn" class="btn btn-primary btn-lg" type="submit">Submit</button>
+        <span id="local-note" class="hint" hidden>
+          No backend configured — this reply is being kept in your browser only.
+        </span>
+      </div>
+    </form>
+  </section>
+
+  <!-- ==================== DONE ==================== -->
+  <section id="done-view" hidden>
+    <div class="card card-lead done-card">
+      <span class="done-mark">✓</span>
+      <h1 id="done-title">Thanks!</h1>
+      <p id="done-note" class="lede"></p>
+      <div class="form-actions">
+        <button id="another-btn" class="btn" type="button">Fill out another form</button>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="wrap foot">
+  <p>James Madison University · Madison Institute for Mathematical Finance</p>
+</footer>
+
+<script src="../config.js"></script>
+<script src="core.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

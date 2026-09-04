@@ -10,8 +10,9 @@ import json
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-JS_FILE = HERE / "estimathon.js"
-ANSWERS_FILE = HERE / "answers.json"
+ROOT = HERE.parent          # the repo root, which is what GitHub Pages serves
+JS_FILE = ROOT / "estimathon" / "core.js"
+ANSWERS_FILE = ROOT / "answers.json"
 MARKER = "var DEFAULT_QUESTIONS = ["
 
 
@@ -209,7 +210,7 @@ def load_answer_key(path=ANSWERS_FILE):
             if not k.startswith("_") and isinstance(v, (int, float))}
 
 
-QUESTIONS_FILE = HERE / "questions.json"
+QUESTIONS_FILE = ROOT / "questions.json"
 
 
 def load_questions(js_file=JS_FILE, answers=None):

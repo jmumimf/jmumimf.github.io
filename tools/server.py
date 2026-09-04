@@ -37,6 +37,7 @@ from urllib.parse import parse_qs, urlparse
 from questions import _extract_array as extract_array, load_questions
 
 HERE = Path(__file__).resolve().parent
+ROOT = HERE.parent          # the repo root, which is what GitHub Pages serves
 MAX_BODY = 64 * 1024
 
 SCHEMA = """
@@ -70,7 +71,26 @@ CREATE TABLE IF NOT EXISTS config (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS forms (
+    id           TEXT PRIMARY KEY,
+    position     INTEGER NOT NULL DEFAULT 0,
+    title        TEXT NOT NULL,
+    description  TEXT NOT NULL DEFAULT '',
+    status       TEXT NOT NULL DEFAULT 'open',
+    submit_label TEXT NOT NULL DEFAULT 'Submit',
+    confirmation TEXT NOT NULL DEFAULT '',
+    fields       TEXT NOT NULL DEFAULT '[]'
+);
+CREATE TABLE IF NOT EXISTS form_responses (
+    id           TEXT PRIMARY KEY,
+    form_id      TEXT NOT NULL REFERENCES forms(id) ON DELETE CASCADE,
+    submitted_at INTEGER NOT NULL,
+    answers      TEXT NOT NULL DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS idx_resp_form ON form_responses(form_id, submitted_at);
 """
+
+CHOICE_TYPES = ("single_select", "multi_select", "dropdown", "timeslot")
 
 CONFIG_DEFAULTS = {
     "eventName": "JMU MIMF Estimathon",
@@ -103,6 +123,7 @@ class Database:
         self.con.commit()
         self._seed_config()
         self.sync_questions(reseed=reseed)
+        self.sync_forms(reseed=reseed)
 
     def _migrate(self):
         """Bring a database created by an older version up to date."""
@@ -120,7 +141,7 @@ class Database:
             self.con.commit()
 
     def sync_questions(self, reseed=False):
-        """Pull the question list from estimathon.js.
+        """Pull the question list from estimathon/core.js.
 
         New questions are inserted; existing ones have their text, unit and
         order refreshed. Answers already in the database are left alone unless
@@ -336,6 +357,109 @@ class Database:
             self.con.commit()
         return {"ok": True}
 
+    # ----- forms -----------------------------------------------------------
+
+    def sync_forms(self, reseed=False):
+        """Load form definitions from forms.json.
+
+        Wording and questions are refreshed on every start; a form's open/closed
+        status is left alone unless --reseed, so restarting the server mid-week
+        does not quietly reopen something you closed.
+        """
+        path = ROOT / "forms" / "forms.json"
+        if not path.exists():
+            return []
+        forms = json.loads(path.read_text(encoding="utf-8"))
+
+        with self.lock:
+            existing = {r["id"] for r in self.con.execute("SELECT id FROM forms")}
+            for i, form in enumerate(forms):
+                row = (form["id"], i, form.get("title", form["id"]),
+                       form.get("description", ""), form.get("status", "open"),
+                       form.get("submitLabel", "Submit"), form.get("confirmation", ""),
+                       json.dumps(form.get("fields", [])))
+                if form["id"] in existing and not reseed:
+                    self.con.execute(
+                        "UPDATE forms SET position = ?, title = ?, description = ?, "
+                        "submit_label = ?, confirmation = ?, fields = ? WHERE id = ?",
+                        (row[1], row[2], row[3], row[5], row[6], row[7], row[0]))
+                else:
+                    self.con.execute(
+                        "INSERT INTO forms (id, position, title, description, status, "
+                        "submit_label, confirmation, fields) VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+                        "ON CONFLICT(id) DO UPDATE SET position = excluded.position, "
+                        "title = excluded.title, description = excluded.description, "
+                        "status = excluded.status, submit_label = excluded.submit_label, "
+                        "confirmation = excluded.confirmation, fields = excluded.fields",
+                        row)
+            self.con.commit()
+        return forms
+
+    @staticmethod
+    def _shape_form(row):
+        return {
+            "id": row["id"], "title": row["title"], "description": row["description"],
+            "status": row["status"], "submitLabel": row["submit_label"],
+            "confirmation": row["confirmation"], "fields": json.loads(row["fields"]),
+        }
+
+    def list_forms(self):
+        with self.lock:
+            rows = list(self.con.execute("SELECT * FROM forms ORDER BY position, id"))
+        return {"forms": [self._shape_form(r) for r in rows]}
+
+    def list_responses(self, form_id=None):
+        with self.lock:
+            if form_id:
+                rows = list(self.con.execute(
+                    "SELECT * FROM form_responses WHERE form_id = ? ORDER BY submitted_at DESC",
+                    (form_id,)))
+            else:
+                rows = list(self.con.execute(
+                    "SELECT * FROM form_responses ORDER BY submitted_at DESC"))
+        return {"responses": [
+            {"id": r["id"], "formId": r["form_id"], "submittedAt": r["submitted_at"],
+             "answers": json.loads(r["answers"])}
+            for r in rows
+        ]}
+
+    def submit_form(self, form_id, answers):
+        with self.lock:
+            row = self.con.execute("SELECT * FROM forms WHERE id = ?", (form_id,)).fetchone()
+        if not row:
+            raise ApiError("Unknown form.", 404)
+        form = self._shape_form(row)
+        if form["status"] == "closed":
+            raise ApiError("This form is closed.")
+
+        clean = validate_answers(form, answers or {})
+        entry = {"id": "resp_" + uuid.uuid4().hex[:8], "formId": form_id,
+                 "submittedAt": int(time.time() * 1000), "answers": clean}
+        with self.lock:
+            self.con.execute(
+                "INSERT INTO form_responses (id, form_id, submitted_at, answers) "
+                "VALUES (?, ?, ?, ?)",
+                (entry["id"], form_id, entry["submittedAt"], json.dumps(clean)))
+            self.con.commit()
+        return {"response": entry}
+
+    def set_form_status(self, form_id, status):
+        if status not in ("open", "closed"):
+            raise ApiError("Unknown form status.")
+        with self.lock:
+            cur = self.con.execute("UPDATE forms SET status = ? WHERE id = ?",
+                                   (status, form_id))
+            self.con.commit()
+        if not cur.rowcount:
+            raise ApiError("Unknown form.", 404)
+        return {"ok": True}
+
+    def delete_response(self, response_id):
+        with self.lock:
+            self.con.execute("DELETE FROM form_responses WHERE id = ?", (response_id,))
+            self.con.commit()
+        return {"ok": True}
+
     def delete_team(self, team_id):
         with self.lock:
             self.con.execute("DELETE FROM submissions WHERE team_id = ?", (team_id,))
@@ -364,6 +488,75 @@ class ApiError(Exception):
         self.status = status
 
 
+def is_multi_field(field):
+    if field.get("type") == "timeslot":
+        return field.get("multiple", True) is not False
+    return field.get("type") == "multi_select"
+
+
+def validate_answers(form, answers):
+    """Check one submission against its form definition.
+
+    forms-core.js applies the same rules in the browser so people are told
+    early; this copy is the one that counts, because a POST can come from
+    anywhere.
+    """
+    clean = {}
+
+    for field in form["fields"]:
+        value = answers.get(field["id"])
+        multi = is_multi_field(field)
+        label = field.get("label", field["id"])
+
+        if multi:
+            if value is None or value == "":
+                value = []
+            if not isinstance(value, list):
+                value = [value]
+            value = [str(v).strip() for v in value if str(v).strip()][:200]
+            empty = not value
+        else:
+            if isinstance(value, list):
+                value = value[0] if value else ""
+            value = "" if value is None else str(value).strip()[:5000]
+            empty = value == ""
+
+        if field.get("required") and empty:
+            raise ApiError('"%s" is required.' % label)
+        if empty:
+            continue
+
+        if field.get("type") == "email":
+            if not re.match(r"^[^\s@]+@[^\s@]+\.[^\s@]+$", value):
+                raise ApiError('"%s" needs a valid email address.' % label)
+
+        if field.get("type") == "number":
+            try:
+                n = float(value)
+            except ValueError:
+                raise ApiError('"%s" must be a number.' % label)
+            if field.get("min") is not None and n < field["min"]:
+                raise ApiError('"%s" must be at least %s.' % (label, field["min"]))
+            if field.get("max") is not None and n > field["max"]:
+                raise ApiError('"%s" must be at most %s.' % (label, field["max"]))
+
+        if multi:
+            if field.get("minChoices") and len(value) < field["minChoices"]:
+                raise ApiError('Pick at least %d for "%s".' % (field["minChoices"], label))
+            if field.get("maxChoices") and len(value) > field["maxChoices"]:
+                raise ApiError('Pick at most %d for "%s".' % (field["maxChoices"], label))
+
+        if field.get("type") in CHOICE_TYPES and not field.get("allowOther"):
+            allowed = field.get("options", [])
+            given = value if multi else [value]
+            if any(v not in allowed for v in given):
+                raise ApiError('"%s" has an answer that is not one of the options.' % label)
+
+        clean[field["id"]] = value
+
+    return clean
+
+
 # ---------------------------------------------------------------------------
 # HTTP
 # ---------------------------------------------------------------------------
@@ -378,7 +571,7 @@ def strip_default_questions(js):
         array = extract_array(js)
     except Exception:
         # Better to serve nothing than to serve the answer key by accident.
-        raise RuntimeError("could not locate DEFAULT_QUESTIONS in estimathon.js; "
+        raise RuntimeError("could not locate DEFAULT_QUESTIONS in estimathon/core.js; "
                            "refusing to serve it")
     return js.replace(array, "[/* withheld by server.py; see /api/state */]", 1)
 
@@ -387,18 +580,19 @@ ADMIN_CODE_RE = re.compile(r"=\s*'([^']*)'\s*;\s*/\*\s*admin-passcode\s*\*/")
 
 
 def read_admin_code():
-    """The organizer passcode, taken from admin.js so there is one place to
-    change it. Used here to decide who may see the answer key.
+    """The organizer passcode, taken from config.js so both dashboards and this
+    server agree on one value. Decides who may see the answer key and the form
+    responses.
 
     Found by the `/* admin-passcode */` marker rather than by variable name, so
     renaming the variable does not silently fall back to a default nobody knows.
     """
-    m = ADMIN_CODE_RE.search((HERE / "admin.js").read_text(encoding="utf-8"))
+    m = ADMIN_CODE_RE.search((ROOT / "config.js").read_text(encoding="utf-8"))
     if not m:
         raise SystemExit(
-            "server.py: could not find the admin passcode in admin.js.\n"
+            "server.py: could not find the admin passcode in config.js.\n"
             "It must be a single-quoted string on a line ending with the marker:\n"
-            "    var whatever = 'yourcode'; /* admin-passcode */\n"
+            "    window.ADMIN_PASSCODE = 'yourcode'; /* admin-passcode */\n"
             "Or pass --admin-code on the command line.")
     return m.group(1)
 
@@ -406,7 +600,7 @@ def read_admin_code():
 class Handler(BaseHTTPRequestHandler):
     server_version = "Estimathon/1.0"
     db = None
-    root = HERE
+    root = ROOT
     admin_code = "mimf"
     allow_origin = "*"
 
@@ -474,7 +668,12 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = urlparse(self.path).path
         if path.startswith("/api/"):
-            return self._api_get(path)
+            try:
+                return self._api_get(path)
+            except ApiError as err:
+                return self._json({"error": str(err)}, err.status)
+            except sqlite3.Error as err:
+                return self._json({"error": "Database error: %s" % err}, 500)
         return self._static(path)
 
     do_HEAD = do_GET
@@ -505,12 +704,28 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(self.db.delete_team(body.get("teamId")))
             if path == "/api/reset":
                 return self._json(self.db.reset())
+
+            # ----- forms -----
+            if path == "/api/forms/submit":
+                return self._json(self.db.submit_form(body.get("formId"),
+                                                      body.get("answers")))
+            if path == "/api/forms/status":
+                self._require_admin(body)
+                return self._json(self.db.set_form_status(body.get("formId"),
+                                                          body.get("status")))
+            if path == "/api/forms/response/delete":
+                self._require_admin(body)
+                return self._json(self.db.delete_response(body.get("responseId")))
             return self._json({"error": "No such endpoint."}, 404)
         except ApiError as err:
             return self._json({"error": str(err)}, err.status)
         except sqlite3.Error as err:
             self.log_message("db error: %s", err)
             return self._json({"error": "Database error: %s" % err}, 500)
+
+    def _require_admin(self, body):
+        if (body or {}).get("key") != self.admin_code:
+            raise ApiError("Organizer passcode required.", 401)
 
     def _api_get(self, path):
         if path == "/api/state":
@@ -521,6 +736,14 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/admin-check":
             key = parse_qs(urlparse(self.path).query).get("key", [""])[0]
             return self._json({"ok": key == self.admin_code})
+        if path == "/api/forms":
+            # Form questions are public; only the responses are gated.
+            return self._json(self.db.list_forms())
+        if path == "/api/forms/responses":
+            query = parse_qs(urlparse(self.path).query)
+            if query.get("key", [""])[0] != self.admin_code:
+                raise ApiError("Organizer passcode required.", 401)
+            return self._json(self.db.list_responses(query.get("formId", [None])[0]))
         if path == "/api/health":
             return self._json({"ok": True, "db": str(self.db.path)})
         return self._json({"error": "No such endpoint."}, 404)
@@ -538,6 +761,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(404, b"Not found", "text/plain; charset=utf-8")
         # The answer key and the event database are never web content.
         if (target.suffix in (".py", ".db") or target.name == "answers.json"
+                or "tools" in target.relative_to(self.root).parts
+                or "worker" in target.relative_to(self.root).parts
                 or target.name.startswith("estimathon.db")):
             return self._send(403, b"Forbidden", "text/plain; charset=utf-8")
 
@@ -546,7 +771,7 @@ class Handler(BaseHTTPRequestHandler):
             body = self._inject(html).encode("utf-8")
             return self._send(200, body, "text/html; charset=utf-8")
 
-        if target.name == "estimathon.js":
+        if target.name == "core.js" and target.parent.name == "estimathon":
             # DEFAULT_QUESTIONS is the authoring copy: it holds every question's
             # text AND the answer key. Never ship it to a browser. In server
             # mode the client takes its questions from /api/state, which
@@ -571,8 +796,13 @@ class Handler(BaseHTTPRequestHandler):
         live = re.sub(r"<!--.*?-->", "", html, flags=re.S)
         if "ESTIMATHON_API" in live:
             return html  # configured by hand; leave it alone
-        return re.sub(r'([ \t]*)(<script src="estimathon\.js"></script>)',
-                      lambda m: m.group(1) + INJECT.rstrip() + "\n" + m.group(1) + m.group(2),
+
+        # Anchored on config.js, which every page that talks to the API loads,
+        # and injected AFTER it so this server wins over the deployed URL
+        # config.js names. Anchoring on estimathon.js instead would miss the
+        # forms pages, and they would quietly post to production.
+        return re.sub(r'([ \t]*)(<script src="[^"]*config\.js"></script>)',
+                      lambda m: m.group(1) + m.group(2) + "\n" + m.group(1) + INJECT.rstrip(),
                       html, count=1)
 
 
@@ -628,11 +858,13 @@ def start_tunnel(port, on_url):
     return proc
 
 
-def announce_tunnel(url, admin_path="/admin.html"):
+def announce_tunnel(url, admin_path="/"):
     line = "=" * (len(url) + 22)
     print("\n" + line)
     print("  TEAMS JOIN AT   %s" % url)
-    print("  DASHBOARD       %s%s" % (url, admin_path))
+    print("  HOME            %s%s" % (url, admin_path))
+    print("  ESTIMATHON      %sestimathon/" % url)
+    print("  FORMS           %sforms/" % url)
     print(line)
     print("  This URL is public and lasts until you stop the server.\n")
 
@@ -642,11 +874,11 @@ def main():
     p.add_argument("--port", type=int, default=8000)
     p.add_argument("--host", default="0.0.0.0",
                    help="0.0.0.0 (default) lets other devices on the network connect")
-    p.add_argument("--db", default=str(HERE / "estimathon.db"))
+    p.add_argument("--db", default=str(ROOT / "estimathon.db"))
     p.add_argument("--reseed", action="store_true",
-                   help="overwrite stored answers with the ones in estimathon.js")
+                   help="overwrite stored answers with the ones in answers.json")
     p.add_argument("--admin-code", default=None,
-                   help="organizer passcode (default: the PASSCODE in admin.js)")
+                   help="organizer passcode (default: ADMIN_PASSCODE in config.js)")
     p.add_argument("--tunnel", action="store_true",
                    help="also expose a public https URL via Cloudflare Tunnel")
     p.add_argument("--allow-origin", default="*",
@@ -655,7 +887,7 @@ def main():
     args = p.parse_args()
 
     Handler.db = Database(args.db, reseed=args.reseed)
-    Handler.root = HERE
+    Handler.root = ROOT
     Handler.admin_code = args.admin_code or read_admin_code()
     Handler.allow_origin = args.allow_origin
 
@@ -666,8 +898,11 @@ def main():
         len(state["config"]["questions"]),
         sum(1 for q in state["config"]["questions"] if q["answer"] is not None)))
     print("  teams      %d, %d submissions" % (len(state["teams"]), len(state["submissions"])))
-    print("  team page  http://localhost:%d/" % args.port)
-    print("  admin      http://localhost:%d/admin.html" % args.port)
+    print("  home       http://localhost:%d/" % args.port)
+    print("  estimathon http://localhost:%d/estimathon/" % args.port)
+    print("  forms      http://localhost:%d/forms/" % args.port)
+    print("  dashboards http://localhost:%d/estimathon/admin.html" % args.port)
+    print("             http://localhost:%d/forms/admin.html" % args.port)
     if args.host == "0.0.0.0":
         print("  (share your machine's LAN address for phones on the same wifi)")
     print("  Ctrl+C to stop\n")

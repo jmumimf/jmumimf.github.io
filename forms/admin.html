@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Form Responses | JMU MIMF</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body class="admin">
+
+<header class="topbar">
+  <div class="wrap topbar-inner">
+    <a class="brand" href="../">
+      <span class="brand-mark">∑</span>
+      <span>
+        <strong>Form Responses</strong>
+        <small>JMU MIMF</small>
+      </span>
+    </a>
+    <nav class="topbar-right">
+      <span id="live-dot" class="pill pill-muted">…</span>
+      <a class="link-quiet" href="./">Public forms</a>
+      <a class="link-quiet" href="../estimathon/admin.html">Estimathon</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <section id="gate-view" class="card card-lead">
+    <h1>Admin access</h1>
+    <p class="lede">Enter the organizer passcode to read form responses.</p>
+    <form id="gate-form" class="form">
+      <label class="field">
+        <span class="field-label">Passcode</span>
+        <input id="gate-input" type="password" autocomplete="off">
+      </label>
+      <p id="gate-error" class="msg msg-error" hidden>Not quite. Try again.</p>
+      <button class="btn btn-primary" type="submit">Unlock</button>
+    </form>
+  </section>
+
+  <div id="admin-view" hidden>
+
+    <section class="card control-bar">
+      <div class="control-group">
+        <span class="eyebrow">Form</span>
+        <select id="form-picker" class="ff-input form-picker"></select>
+        <button id="toggle-status" class="btn" type="button">Close form</button>
+      </div>
+      <div class="control-group">
+        <span class="eyebrow">Download</span>
+        <button id="export-csv" class="btn" type="button">CSV</button>
+        <button id="export-json" class="btn" type="button">JSON</button>
+        <button id="refresh-btn" class="btn btn-quiet" type="button">Refresh</button>
+      </div>
+    </section>
+
+    <section class="stat-row">
+      <div class="stat"><span id="stat-responses" class="stat-num">0</span><span class="stat-label">responses</span></div>
+      <div class="stat"><span id="stat-today" class="stat-num">0</span><span class="stat-label">in the last 24h</span></div>
+      <div class="stat"><span id="stat-fields" class="stat-num">0</span><span class="stat-label">questions</span></div>
+      <div class="stat"><span id="stat-status" class="stat-num">—</span><span class="stat-label">status</span></div>
+    </section>
+
+    <!-- availability heatmap, only for forms with a timeslot field -->
+    <section id="slots-card" class="card" hidden>
+      <div class="card-head">
+        <h2 id="slots-title">Availability</h2>
+        <span class="pill pill-muted">most available first</span>
+      </div>
+      <div id="slots-body" class="slots"></div>
+      <p class="hint">
+        The darkest bars are the windows that work for the most people. Hover a
+        bar to see exactly who can make it.
+      </p>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>Responses</h2>
+        <input id="search" class="ff-input search-input" type="search" placeholder="Filter responses…">
+      </div>
+      <div class="table-scroll">
+        <table class="table" id="responses">
+          <thead></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+  </div>
+</main>
+
+<script src="../config.js"></script>
+<script src="../assets/admin-gate.js"></script>
+<script src="core.js"></script>
+<script src="admin.js"></script>
+</body>
+</html>

@@ -14,13 +14,16 @@ pending/open/closed status alone, so you can fix a typo mid-event without
 resetting the run of play.
 """
 
+import json
 import sys
 from pathlib import Path
 
 from questions import load_questions
 
 HERE = Path(__file__).resolve().parent
-OUT = HERE / "worker" / "seed.sql"
+ROOT = HERE.parent          # the repo root, which is what GitHub Pages serves
+OUT = ROOT / "worker" / "seed.sql"
+FORMS = ROOT / "forms" / "forms.json"
 
 
 def sql_string(value):
@@ -29,6 +32,31 @@ def sql_string(value):
 
 def sql_number(value):
     return "NULL" if value is None else repr(float(value))
+
+
+def build_forms(forms):
+    """Upsert the form definitions. Each form's open/closed status is only set
+    on insert, so re-seeding never reopens a form you closed from the
+    dashboard."""
+    lines = ["", "-- forms --------------------------------------------------", ""]
+    for i, form in enumerate(forms):
+        lines.append(
+            "INSERT INTO forms (id, position, title, description, status, "
+            "submit_label, confirmation, fields) VALUES "
+            "(%s, %d, %s, %s, %s, %s, %s, %s)\n"
+            "  ON CONFLICT(id) DO UPDATE SET position = excluded.position, "
+            "title = excluded.title, description = excluded.description, "
+            "submit_label = excluded.submit_label, "
+            "confirmation = excluded.confirmation, fields = excluded.fields;"
+            % (sql_string(form["id"]), i, sql_string(form.get("title", form["id"])),
+               sql_string(form.get("description", "")),
+               sql_string(form.get("status", "open")),
+               sql_string(form.get("submitLabel", "Submit")),
+               sql_string(form.get("confirmation", "")),
+               sql_string(json.dumps(form.get("fields", []))))
+        )
+    lines.append("")
+    return "\n".join(lines)
 
 
 def build(questions):
@@ -59,11 +87,16 @@ def main():
     questions = load_questions()
     keyed = sum(1 for q in questions if q["answer"] is not None)
 
+    forms = []
+    if FORMS.exists():
+        forms = json.loads(FORMS.read_text(encoding="utf-8"))
+
     OUT.parent.mkdir(parents=True, exist_ok=True)
-    OUT.write_text(build(questions), encoding="utf-8")
+    OUT.write_text(build(questions) + build_forms(forms), encoding="utf-8")
 
     print("wrote %s" % OUT)
     print("  %d questions, %d with an answer" % (len(questions), keyed))
+    print("  %d forms (%s)" % (len(forms), ", ".join(f["id"] for f in forms) or "none"))
     if keyed < len(questions):
         missing = [q["id"] for q in questions if q["answer"] is None]
         print("  no answer yet for: %s" % ", ".join(missing))

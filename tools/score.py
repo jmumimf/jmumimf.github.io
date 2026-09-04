@@ -25,6 +25,7 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+ROOT = HERE.parent          # the repo root, which is what GitHub Pages serves
 
 # --- tunables ---------------------------------------------------------------
 # Cost per unit of interval width. score_i for a bracketed answer of ratio r is
@@ -247,7 +248,7 @@ def _selftest():
         failures.append("unanswered status was %r" % status)
 
     # the JS copy of the constants must match this file
-    js = (HERE / "estimathon.js").read_text(encoding="utf-8")
+    js = (ROOT / "estimathon" / "core.js").read_text(encoding="utf-8")
     for name, value in (("widthWeight", WIDTH_WEIGHT),
                         ("unansweredPenalty", UNANSWERED_PENALTY)):
         import re
@@ -269,7 +270,7 @@ def _selftest():
 
 def main(argv=None):
     p = argparse.ArgumentParser(description="Score an Estimathon.")
-    p.add_argument("source", nargs="?", default=str(HERE / "estimathon.db"),
+    p.add_argument("source", nargs="?", default=str(ROOT / "estimathon.db"),
                    help="estimathon.db, or a JSON/CSV export from the admin page")
     p.add_argument("--json", action="store_true", help="print full results as JSON")
     p.add_argument("--out", metavar="FILE", help="also write the leaderboard to a CSV")
